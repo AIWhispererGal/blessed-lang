@@ -65,8 +65,50 @@ const PRELUDE: Record<string, string> = {
     pow(n: number | bigint) { const k = Number(n), r = this.abs() ** k, t = this.arg() * k; return new Complex(r * Math.cos(t), r * Math.sin(t)); }
     toString() { return this.re === 0 ? \`\${this.im}i\` : \`\${this.re} \${this.im < 0 ? "-" : "+"} \${Math.abs(this.im)}i\`; }
 }`,
+  blessedComplexFloat: `function blessedComplexFloat(z: Complex): number {
+    if (z.im !== 0) throw new Error(${JSON.stringify(D.floatFromComplex())});
+    return z.re;
+}`,
 };
-const PRELUDE_ORDER = ["blessedEq", "blessedDiv", "blessedMod", "blessedCheck", "blessedRange", "blessedAt", "blessedIntParse", "Complex"];
+const PRELUDE_ORDER = ["blessedEq", "blessedDiv", "blessedMod", "blessedCheck", "blessedRange", "blessedAt", "blessedIntParse", "Complex", "blessedComplexFloat", "blessedShow"];
+
+/** Prints a value exactly as the BLESSED interpreter's show() does. Records are plain objects, so they are named by their field set. */
+export function tsShowHelper(records: [string, string[]][]): string {
+  return `const blessedRecords: [string, string[]][] = ${JSON.stringify(records)};
+function blessedShow(v: unknown, quote = false): string {
+    if (typeof v === "string") return quote ? JSON.stringify(v) : v;
+    if (typeof v === "bigint") return v.toString();
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (v === null || v === undefined) return "null";
+    if (typeof v === "number") {
+        if (v === Infinity) return "Infinity";
+        if (v === -Infinity) return "-Infinity";
+        const r = Number(v.toPrecision(15));
+        return Number.isInteger(r) ? r.toFixed(1) : String(r);
+    }
+    if (typeof v === "function") return \`fn \${v.name || "fn"}\`;
+    if (Array.isArray(v)) return \`[\${v.map(x => blessedShow(x, true)).join(", ")}]\`;
+    if (v instanceof Map) return \`{\${[...v].map(([k, x]) => \`\${blessedShow(k, true)}: \${blessedShow(x, true)}\`).join(", ")}}\`;
+    const o = v as Record<string, unknown>;
+    if (Object.getPrototypeOf(o) !== Object.prototype) {   // Complex
+        const c = (n: number) => (Math.abs(n) < 1e-12 ? 0 : Number(n.toPrecision(15)));
+        const re = c(o.re as number), im = c(o.im as number);
+        return re === 0 ? \`\${im < 0 ? "-" : ""}\${Math.abs(im)}i\` : \`\${re} \${im < 0 ? "-" : "+"} \${Math.abs(im)}i\`;
+    }
+    const keys = Object.keys(o);
+    const [name, fields] = blessedRecords.find(([, fs]) => fs.length === keys.length && fs.every(f => keys.includes(f))) ?? (["", keys] as [string, string[]]);
+    return \`\${name}(\${fields.map(f => \`\${f}: \${blessedShow(o[f], true)}\`).join(", ")})\`;
+}`;
+}
+
+/** Every record declared anywhere in the program, with its fields in declaration order. */
+function allRecords(node: unknown, out: [string, string[]][] = []): [string, string[]][] {
+  if (!node || typeof node !== "object") return out;
+  const n = node as { kind?: string; name?: string; fields?: { name: string }[] };
+  if (n.kind === "RecordDecl") out.push([n.name!, n.fields!.map(f => f.name)]);
+  for (const v of Object.values(node)) allRecords(v, out);
+  return out;
+}
 
 type Match = Extract<Expr, { kind: "Match" }>;
 type IfNode = Extract<Stmt, { kind: "If" | "IfLet" }>;
@@ -77,7 +119,7 @@ export function emitTypeScript(p: Program): string {
   const { typeOf } = checkWithTypes(p);
   const em = new Ts(typeOf);
   const body = em.stmts(p.body, 0);
-  const pre = PRELUDE_ORDER.filter(k => em.uses.has(k)).map(k => PRELUDE[k]);
+  const pre = PRELUDE_ORDER.filter(k => em.uses.has(k)).map(k => k === "blessedShow" ? tsShowHelper(allRecords(p.body)) : PRELUDE[k]);
   const lines = [...(pre.length ? [pre.join("\n\n"), ""] : []), ...body, ...p.trailingComments.map(c => em.comment(c))];
   // `export {}` makes the file a module, so top-level names cannot collide with lib.dom globals (`name`, `status`, `close`)
   return ("export {};\n" + lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()).trim();
@@ -111,6 +153,13 @@ class Ts {
   constructor(private typeOf: (e: Expr) => Type) {}
 
   comment(c: string) { return "//" + c.slice(2); }
+  /** Code rendering `e` as text the way BLESSED prints it; Strings (and Ints, where `plainInt`) render as themselves. */
+  shown(e: Expr, code: string, plainInt = false): string {
+    const k = this.k(e);
+    if (k === "String" || (plainInt && k === "Int")) return code;
+    this.uses.add("blessedShow");
+    return `blessedShow(${code})`;
+  }
   /** The checker's type for an expression, looking through `T?`. */
   t(e: Expr): Type { const t = this.typeOf(e); return t.k === "Nullable" ? t.inner : t; }
   k(e: Expr): Type["k"] { return this.t(e).k; }
@@ -235,7 +284,7 @@ class Ts {
       case "ComplexLit": this.uses.add("Complex"); return `new Complex(${plainDecimal(e.re)}, ${plainDecimal(e.im)})`;
       case "StrLit":
         if (e.parts.every(x => typeof x === "string")) return JSON.stringify(e.parts.join(""));
-        return "`" + e.parts.map(x => typeof x === "string" ? x.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${") : `\${${this.expr(x, depth)}}`).join("") + "`";
+        return "`" + e.parts.map(x => typeof x === "string" ? x.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${") : `\${${this.shown(x, this.expr(x, depth), true)}}`).join("") + "`";
       case "BoolLit": return String(e.value);
       case "NullLit": return "null";
       case "Ident": return e.name === "PI" ? "Math.PI" : e.name === "E" ? "Math.E" : e.name;
@@ -370,14 +419,18 @@ class Ts {
     if (e.callee.kind === "Ident") {
       const n = e.callee.name;
       if (e.named.length) return `${n}({ ${e.named.map(x => `${x.name}: ${this.expr(x.value, depth)}`).join(", ")} })`;
-      if (n === "print") return `console.log(${args.join(", ")})`;
+      if (n === "print") {
+        // Array.join renders a bigint without its `n`; console.log of a lone bigint would not
+        if (e.args.length === 1) return `console.log(${this.k(e.args[0]) === "Int" ? `String(${args[0]})` : this.shown(e.args[0], args[0])})`;
+        return `console.log([${e.args.map((a, i) => this.shown(a, args[i], true)).join(", ")}].join(" "))`;
+      }
       const ak = e.args[0] ? this.k(e.args[0]) : "Unknown";
-      if (n === "String") return `String(${args[0]})`;
+      if (n === "String") { const sh = this.shown(e.args[0], args[0], true); return sh === args[0] ? `String(${args[0]})` : sh; }
       if (n === "Int") {
         if (ak === "String") { this.uses.add("blessedIntParse"); return `blessedIntParse(${args[0]})`; }
         return ak === "Float" ? `BigInt(Math.trunc(${args[0]}))` : args[0];
       }
-      if (n === "Float") return ak === "String" ? `((_v) => (/^\\s*-?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*$/.test(_v) && Number.isFinite(Number(_v)) ? Number(_v) : null))(${args[0]})` : `Number(${args[0]})`;
+      if (n === "Float") return ak === "String" ? `((_v) => (/^\\s*-?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*$/.test(_v) && Number.isFinite(Number(_v)) ? Number(_v) : null))(${args[0]})` : ak === "Complex" ? (this.uses.add("blessedComplexFloat"), this.uses.add("Complex"), `blessedComplexFloat(${args[0]})`) : `Number(${args[0]})`;
       if (n === "Complex") { this.uses.add("Complex"); return ak === "Complex" ? args[0] : `new Complex(Number(${args[0]}), 0)`; }
       return `${n}(${args.join(", ")})`;
     }
@@ -395,7 +448,11 @@ class Ts {
         case "replace": return `${obj}.split(${args[0]}).join(${args[1]})`;
         case "push": return `[...${plain()}, ${args[0]}]`;
         case "map": return `${obj}.map(${args[0]})`; case "filter": return `${obj}.filter(${args[0]})`; case "reduce": return `${obj}.reduce(${args[0]}, ${args[1]})`;
-        case "join": return `${obj}.map(String).join(${args[0]})`;
+        case "join": {
+          const el = ot.k === "List" ? ot.el.k : "Unknown";
+          if (el === "String" || el === "Int") return `${obj}.map(String).join(${args[0]})`;
+          this.uses.add("blessedShow"); return `${obj}.map(x => blessedShow(x)).join(${args[0]})`;
+        }
         case "reverse": return `[...${plain()}].reverse()`;
         case "sort": return `[...${plain()}].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))`;
         case "sum": return ot.k === "List" && ot.el.k === "Float" ? `${obj}.reduce((a, b) => a + b, 0)` : `${obj}.reduce((a, b) => a + b, 0n)`;

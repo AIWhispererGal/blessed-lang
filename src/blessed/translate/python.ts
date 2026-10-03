@@ -28,7 +28,9 @@ export function emitPython(p: Program): string {
   const imports: string[] = [];
   if (em.uses.has("dataclass")) imports.push("from dataclasses import dataclass, replace");
   if (em.uses.has("typing")) imports.push(`from typing import ${[...em.typing].sort().join(", ")}`);
-  for (const m of ["cmath", "functools", "math", "re"]) if (em.uses.has(m)) imports.push(`import ${m}`);
+  if (em.uses.has("show")) ["json", "math"].forEach(m => em.uses.add(m));
+  if (em.uses.has("cfloat")) em.uses.add("math");
+  for (const m of ["cmath", "functools", "json", "math", "re"]) if (em.uses.has(m)) imports.push(`import ${m}`);
   if (imports.length) lines.push(...imports, "");
   if (em.uses.has("bdiv")) lines.push(
     "def _bdiv(a, b):", `${IND}if b == 0:`, `${IND}${IND}raise ZeroDivisionError(${JSON.stringify(D.divByZero())})`,
@@ -49,10 +51,71 @@ export function emitPython(p: Program): string {
   if (em.uses.has("bfloat")) lines.push(
     "def _bfloat(s):", `${IND}s = s.strip()`, `${IND}if not re.fullmatch(r"-?([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][-+]?[0-9]+)?", s):`,
     `${IND}${IND}return None`, `${IND}x = float(s)`, `${IND}return x if math.isfinite(x) else None`, "");
+  if (em.uses.has("cfloat")) lines.push(
+    "def _cfloat(z):", `${IND}if z.imag != 0:`, `${IND}${IND}raise ArithmeticError(${JSON.stringify(D.floatFromComplex())})`, `${IND}return z.real`, "");
+  if (em.uses.has("show")) lines.push(...PY_SHOW, "");
   lines.push(...em.hoisted, ...body);
   for (const c of p.trailingComments) lines.push(em.comment(c));
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+/** `_show(v)` prints a value exactly as the BLESSED interpreter's show() does; `_jsnum` renders a float the way JavaScript does. */
+export const PY_SHOW = `def _jsnum(x):
+    if math.isinf(x):
+        return "Infinity" if x > 0 else "-Infinity"
+    if x == 0:
+        return "0"
+    mant, _, exp = repr(abs(x)).partition("e")
+    whole, _, frac = mant.partition(".")
+    raw = whole + frac
+    digits = raw.lstrip("0")
+    n = len(whole) + int(exp or 0) - (len(raw) - len(digits))
+    digits = digits.rstrip("0")
+    k = len(digits)
+    sign = "-" if x < 0 else ""
+    if k <= n <= 21:
+        return sign + digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return sign + digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return sign + "0." + "0" * -n + digits
+    e = n - 1
+    es = ("+" if e >= 0 else "-") + str(abs(e))
+    return sign + (digits if k == 1 else digits[0] + "." + digits[1:]) + "e" + es
+
+def _show(v, quote=False):
+    if isinstance(v, str):
+        return json.dumps(v, ensure_ascii=False) if quote else v
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if v is None:
+        return "null"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        if math.isinf(v):
+            return "Infinity" if v > 0 else "-Infinity"
+        r = float("%.15g" % v)
+        if r == 0:
+            return "0.0"
+        return "%.1f" % r if r.is_integer() and abs(r) < 1e21 else _jsnum(r)
+    if isinstance(v, complex):
+        def c(n):
+            return 0.0 if abs(n) < 1e-12 else float("%.15g" % n)
+        re, im = c(v.real), c(v.imag)
+        if re == 0:
+            return ("-" if im < 0 else "") + _jsnum(abs(im)) + "i"
+        return _jsnum(re) + (" - " if im < 0 else " + ") + _jsnum(abs(im)) + "i"
+    if isinstance(v, list):
+        return "[" + ", ".join(_show(x, True) for x in v) + "]"
+    if isinstance(v, dict):
+        return "{" + ", ".join(_show(k, True) + ": " + _show(x, True) for k, x in v.items()) + "}"
+    if hasattr(type(v), "__dataclass_fields__"):
+        return type(v).__name__ + "(" + ", ".join(f + ": " + _show(getattr(v, f), True) for f in type(v).__dataclass_fields__) + ")"
+    if callable(v):
+        name = getattr(v, "__name__", "fn")
+        return "fn " + ("fn" if name.startswith("<") or name.startswith("_fn_") else name)
+    return str(v)`.split("\n");
 
 /** A statement list that always leaves via `fail` or `return`. */
 function diverges(stmts: Stmt[]): boolean {
@@ -125,6 +188,13 @@ class Py {
   constructor(private typeOf: (e: Expr) => Type) {}
 
   comment(c: string) { return "#" + c.slice(2); }
+  /** Code rendering `e` as text the way BLESSED prints it: String and Int already do, everything else goes through `_show`. */
+  shown(e: Expr, code: string): string {
+    const k = this.kind(e);
+    if (k === "String" || k === "Int") return code;
+    this.uses.add("show");
+    return `_show(${code})`;
+  }
   /** The checker's type kind for an expression, looking through `T?`. */
   kind(e: Expr): Type["k"] { const t = this.typeOf(e); return t.k === "Nullable" ? t.inner.k : t.k; }
 
@@ -368,7 +438,7 @@ class Py {
   str(parts: (string | Expr)[]): string {
     if (parts.every(x => typeof x === "string")) return JSON.stringify(parts.join(""));
     const lit = (s: string) => JSON.stringify(s).slice(1, -1).replace(/\{/g, "{{").replace(/\}/g, "}}");
-    const codes = parts.map(x => typeof x === "string" ? x : this.expr(x));
+    const codes = parts.map(x => typeof x === "string" ? x : this.shown(x, this.expr(x)));
     // Python before 3.12 forbids quotes and backslashes inside f-string braces; braces, `:` and `#` are also unsafe there
     if (codes.some((c, i) => typeof parts[i] !== "string" && /["\\{}#:]/.test(c)))
       return `"${parts.map(x => typeof x === "string" ? lit(x) : "{}").join("")}".format(${codes.filter((_, i) => typeof parts[i] !== "string").join(", ")})`;
@@ -424,9 +494,12 @@ class Py {
       const n = e.callee.name;
       if (e.named.length) return `${n}(${e.named.map(x => `${x.name}=${this.expr(x.value)}`).join(", ")})`;
       const args = e.args.map(a => this.expr(a));
-      if (n === "String") return `str(${args[0]})`;
+      if (n === "print" && e.args.length) return `print(${e.args.map((a, i) => this.shown(a, args[i])).join(", ")})`;
+      if (n === "String") { const sh = this.shown(e.args[0], args[0]); return sh === args[0] ? `str(${args[0]})` : sh; }
       if (n === "Int") { if (this.kind(e.args[0]) === "String") { this.uses.add("bint"); this.uses.add("re"); return `_bint(${args[0]})`; } return `int(${args[0]})`; }
-      if (n === "Float") { if (this.kind(e.args[0]) === "String") { this.uses.add("bfloat"); this.uses.add("re"); this.uses.add("math"); return `_bfloat(${args[0]})`; } return `float(${args[0]})`; }
+      if (n === "Float") { if (this.kind(e.args[0]) === "String") { this.uses.add("bfloat"); this.uses.add("re"); this.uses.add("math"); return `_bfloat(${args[0]})`; }
+        if (this.kind(e.args[0]) === "Complex") { this.uses.add("cfloat"); return `_cfloat(${args[0]})`; }
+        return `float(${args[0]})`; }
       if (n === "Complex") return `complex(${args[0]})`;
       return `${n}(${args.join(", ")})`;
     }
@@ -448,7 +521,11 @@ class Py {
         case "map": { const o = plain(); return `list(map(${this.expr(e.args[0])}, ${o}))`; }
         case "filter": { const o = plain(); return `list(filter(${this.expr(e.args[0])}, ${o}))`; }
         case "reduce": { this.uses.add("functools"); const o = plain(); return `functools.reduce(${arg(0)}, ${o}, ${arg(1)})`; }
-        case "join": { const o = plain(); return `${this.expr(e.args[0], POSTFIX)}.join(map(str, ${o}))`; }
+        case "join": {
+          const o = plain(); const t = this.typeOf(objE); const el = t.k === "List" ? t.el.k : t.k === "Nullable" && t.inner.k === "List" ? t.inner.el.k : "Unknown";
+          const f = el === "String" || el === "Int" ? "str" : (this.uses.add("show"), "_show");
+          return `${this.expr(e.args[0], POSTFIX)}.join(map(${f}, ${o}))`;
+        }
         case "reverse": return `list(reversed(${plain()}))`; case "sort": return `sorted(${plain()})`;
         case "sum": return `sum(${plain()})`;
         case "min": return `min(${plain()}, default=None)`; case "max": return `max(${plain()}, default=None)`;

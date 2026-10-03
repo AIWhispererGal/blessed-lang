@@ -3,6 +3,14 @@ import { parse } from "../parser";
 import { emitPython } from "../translate/python";
 import { emitTypeScript } from "../translate/typescript";
 import { translateBlessedToPython, translateBlessedToTypeScript } from "../index";
+import { PY_SHOW } from "../translate/python";
+import { tsShowHelper } from "../translate/typescript";
+
+/** The print helpers, which the round-trip tests execute; here they are only located. */
+const PYSHOW = PY_SHOW.join("\n") + "\n\n";
+const TSSHOW = tsShowHelper([]) + "\n\n";
+/** Float helpers whose prelude now also imports json for `_show`. */
+const J = (s: string) => s.replace("import math\n\n", "import json\nimport math\n\n");
 
 const py = (src: string) => { const { program, errors } = parse(src); expect(errors).toEqual([]); return emitPython(program); };
 
@@ -27,7 +35,7 @@ describe("python emitter", () => {
   });
   it("Int division helpers appear only when used", () => {
     expect(py("print(7 / 2)\nprint(-7 % 2)")).toBe(BDIV + 'print(_bdiv(7, 2))\nprint(_bmod(-7, 2))');
-    expect(py("print(7.0 / 2.0)")).toBe(FDIV + "print(_fdiv(7.0, 2.0))");
+    expect(py("print(7.0 / 2.0)")).toBe(J(FDIV) + PYSHOW + "print(_show(_fdiv(7.0, 2.0)))");
   });
   it("Float division and NaN-capable arithmetic are checked; PI and E map to math", () => {
     const out = py("print(1.0 / 0.0)");
@@ -40,7 +48,7 @@ describe("python emitter", () => {
     const fm = py("let a = 7.5\nprint(a % 2.0)");
     expect(fm).toContain("def _fmod(a, b):");
     expect(fm).toContain("_fmod(a, 2.0)");
-    expect(py("print(PI)")).toBe("import math\n\nprint(math.pi)");
+    expect(py("print(PI)")).toBe("import json\nimport math\n\n" + PYSHOW + "print(_show(math.pi))");
   });
   it("functions, lambdas, records, with, match", () => {
     const src = 'record Point { x: Int, y: Int }\nfn norm(p: Point) -> Int {\n    return p.x * p.x + p.y * p.y\n}\nlet p = Point(x: 3, y: 4)\nlet q = p with { x: 0 }\nlet double = fn(n: Int) { n * 2 }\nlet label = match norm(p) {\n    25 -> "five"\n    n if n > 100 -> "big"\n    _ -> "other"\n}\nprint(match q {\n    Point(x: 0, y: yy) -> "axis ${yy}"\n    _ -> "off"\n})';
@@ -49,14 +57,14 @@ describe("python emitter", () => {
   });
   it("ranges, slices, negative index, complex, infinity, lists and maps, methods", () => {
     expect(py('let xs = [3, 1, 2]\nprint(xs[-1], xs[0..2], 0..3)\nlet m = {"a": 1}\nprint(m["a"] ?? 0, m.has("a"), xs.length, xs.sort(), xs.map(fn(x) { x * 2 }), "a,b".split(","), 2.pow(10), 3 + 4i, Infinity, (2.0).sqrt())')).toBe(
-      'import math\n\nxs = [3, 1, 2]\nprint(xs[-1], xs[0:2], list(range(0, 3)))\nm = {"a": 1}\nprint((m.get("a") if m.get("a") is not None else 0), ("a" in m), len(xs), sorted(xs), list(map(lambda x: x * 2, xs)), "a,b".split(","), 2 ** 10, complex(3, 4), math.inf, math.sqrt(2.0))');
+      'import json\nimport math\n\n' + PYSHOW + 'xs = [3, 1, 2]\nprint(xs[-1], _show(xs[0:2]), _show(list(range(0, 3))))\nm = {"a": 1}\nprint((m.get("a") if m.get("a") is not None else 0), _show(("a" in m)), len(xs), _show(sorted(xs)), _show(list(map(lambda x: x * 2, xs))), _show("a,b".split(",")), 2 ** 10, _show(complex(3, 4)), _show(math.inf), _show(math.sqrt(2.0)))');
   });
 
   // ---- checker-typed decisions
   it("Int vs Float division is decided by checker types, not names", () => {
     expect(py("let a = 7\nlet b = 2\nprint(a / b)")).toBe(BDIV + "a = 7\nb = 2\nprint(_bdiv(a, b))");
-    expect(py("let a = 7.0\nlet b = 2.0\nprint(a / b)")).toBe(FDIV + "a = 7.0\nb = 2.0\nprint(_fdiv(a, b))");
-    expect(py("let a = 7.5\nprint(a % 2.0)")).toBe(FMOD + "a = 7.5\nprint(_fmod(a, 2.0))");
+    expect(py("let a = 7.0\nlet b = 2.0\nprint(a / b)")).toBe(J(FDIV) + PYSHOW + "a = 7.0\nb = 2.0\nprint(_show(_fdiv(a, b)))");
+    expect(py("let a = 7.5\nprint(a % 2.0)")).toBe(J(FMOD) + PYSHOW + "a = 7.5\nprint(_show(_fmod(a, 2.0)))");
   });
   it("map lookups use .get() by type; list indexing does not", () => {
     expect(py('let scores = {"a": 1}\nlet xs = [1]\nprint(scores["a"] ?? 0, xs[0])')).toBe(
@@ -68,10 +76,10 @@ describe("python emitter", () => {
   });
   it("join, map and filter over a ?? with a call stay valid Python (no walrus in a comprehension iterable)", () => {
     expect(py('fn g() -> List<Int>? {\n    return null\n}\nprint((g() ?? [2]).join(","))\nprint((g() ?? [3]).map(fn(x) { x + 1 }).filter(fn(x) { x > 1 }))')).toBe(
-      'from typing import Optional\n\ndef g() -> Optional[list[int]]:\n    return None\n\nprint(",".join(map(str, (_n1 if (_n1 := g()) is not None else [2]))))\nprint(list(filter(lambda x: x > 1, list(map(lambda x: x + 1, (_n2 if (_n2 := g()) is not None else [3]))))))');
+      'from typing import Optional\nimport json\nimport math\n\n' + PYSHOW + 'def g() -> Optional[list[int]]:\n    return None\n\nprint(",".join(map(str, (_n1 if (_n1 := g()) is not None else [2]))))\nprint(_show(list(filter(lambda x: x > 1, list(map(lambda x: x + 1, (_n2 if (_n2 := g()) is not None else [3])))))))');
   });
   it("Complex methods use cmath", () => {
-    expect(py("print((3 + 4i).sqrt())")).toBe("import cmath\n\nprint(cmath.sqrt(complex(3, 4)))");
+    expect(py("print((3 + 4i).sqrt())")).toBe("import cmath\nimport json\nimport math\n\n" + PYSHOW + "print(_show(cmath.sqrt(complex(3, 4))))");
   });
 
   // ---- statements and scoping
@@ -95,7 +103,7 @@ describe("python emitter", () => {
     expect(py("loop i in 0..3 {\n    print(i)\n}")).toBe("for i in range(0, 3):\n    print(i)");
   });
   it("comparisons never chain the Python way", () => {
-    expect(py("let a = 1\nprint(a < 2 == true, not a == 1)")).toBe("a = 1\nprint((a < 2) == True, (not a) == 1)");
+    expect(py("let a = 1\nprint(a < 2 == true, not a == 1)")).toBe("import json\nimport math\n\n" + PYSHOW + "a = 1\nprint(_show((a < 2) == True), _show((not a) == 1))");
   });
   it("interpolations containing quotes fall back to str.format", () => {
     expect(py('let m = {"a": 1}\nprint("v=${m["a"]} {x}")')).toBe('m = {"a": 1}\nprint("v={} {{x}}".format(m.get("a")))');
@@ -127,16 +135,16 @@ describe("typescript emitter", () => {
   });
   it("structural equality uses a helper; is uses ===", () => {
     expect(ts("let a = [1]\nprint(a == [1], a is a)")).toBe(
-      'export {};\nfunction blessedEq(a: unknown, b: unknown): boolean {\n    if (a === b) return true;\n    if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;\n    if (Array.isArray(a) !== Array.isArray(b)) return false;\n    if (a instanceof Map && b instanceof Map) return a.size === b.size && [...a].every(([k, v]) => b.has(k) && blessedEq(v, b.get(k)));\n    const ka = Object.keys(a as object), kb = Object.keys(b as object);\n    return ka.length === kb.length && ka.every(k => blessedEq((a as any)[k], (b as any)[k]));\n}\n\nlet a = [1n];\nconsole.log(blessedEq(a, [1n]), a === a);');
+      'export {};\nfunction blessedEq(a: unknown, b: unknown): boolean {\n    if (a === b) return true;\n    if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;\n    if (Array.isArray(a) !== Array.isArray(b)) return false;\n    if (a instanceof Map && b instanceof Map) return a.size === b.size && [...a].every(([k, v]) => b.has(k) && blessedEq(v, b.get(k)));\n    const ka = Object.keys(a as object), kb = Object.keys(b as object);\n    return ka.length === kb.length && ka.every(k => blessedEq((a as any)[k], (b as any)[k]));\n}\n\n' + TSSHOW + 'let a = [1n];\nconsole.log([blessedShow(blessedEq(a, [1n])), blessedShow(a === a)].join(" "));');
   });
   it("loops, despite errors, fail, if chain, Int division", () => {
     expect(ts('let i = 0\nloop i < 2 {\n    i = i + 1\n}\nloop x in [1, 2] despite errors as e {\n    if x == 2 {\n        fail "two"\n    } else if x == 1 {\n        print(7 / x)\n    } else {\n        print("no")\n    }\n}')).toBe(
-      'export {};\nfunction blessedDiv(a: bigint, b: bigint): bigint {\n    if (b === 0n) throw new Error("Division by zero. Int is a count and there is no infinite count.");\n    return a / b;\n}\n\nlet i = 0n;\nwhile (i < 2n) {\n    i = i + 1n;\n}\nlet e: string | null = null;\nfor (const x of [1n, 2n]) {\n    try {\n        if (x === 2n) {\n            throw new Error("two");\n        } else if (x === 1n) {\n            console.log(blessedDiv(7n, x));\n        } else {\n            console.log("no");\n        }\n    } catch (_blessedErr) {\n        e = _blessedErr instanceof Error ? _blessedErr.message : String(_blessedErr);\n    }\n}');
+      'export {};\nfunction blessedDiv(a: bigint, b: bigint): bigint {\n    if (b === 0n) throw new Error("Division by zero. Int is a count and there is no infinite count.");\n    return a / b;\n}\n\nlet i = 0n;\nwhile (i < 2n) {\n    i = i + 1n;\n}\nlet e: string | null = null;\nfor (const x of [1n, 2n]) {\n    try {\n        if (x === 2n) {\n            throw new Error("two");\n        } else if (x === 1n) {\n            console.log(String(blessedDiv(7n, x)));\n        } else {\n            console.log("no");\n        }\n    } catch (_blessedErr) {\n        e = _blessedErr instanceof Error ? _blessedErr.message : String(_blessedErr);\n    }\n}');
   });
   it("functions, records, with, match, ranges, complex", () => {
     const src = 'record Point { x: Int, y: Int }\nfn norm(p: Point) -> Int {\n    return p.x * p.x + p.y * p.y\n}\nlet p = Point(x: 3, y: 4)\nlet q = p with { x: 0 }\nlet label = match norm(p) {\n    25 -> "five"\n    n if n > 100 -> "big"\n    _ -> "other"\n}\nprint(match q {\n    Point(x: 0, y: yy) -> "axis ${yy}"\n    _ -> "off"\n})\nloop i in 0..3 {\n    print(i)\n}\nlet z = 3 + 4i\nprint(z.abs(), Infinity, (2.0).sqrt(), [3, 1].sort(), "a,b".split(",").length)';
     expect(ts(src)).toBe(
-      'export {};\nfunction blessedRange(a: bigint, b: bigint): bigint[] {\n    const out: bigint[] = [];\n    for (let i = a; i < b; i++) out.push(i);\n    return out;\n}\n\nclass Complex {\n    constructor(public re: number, public im: number) {}\n    add(o: Complex) { return new Complex(this.re + o.re, this.im + o.im); }\n    sub(o: Complex) { return new Complex(this.re - o.re, this.im - o.im); }\n    mul(o: Complex) { return new Complex(this.re * o.re - this.im * o.im, this.re * o.im + this.im * o.re); }\n    div(o: Complex) { const d = o.re * o.re + o.im * o.im; if (d === 0) throw new Error("Division by zero. Int is a count and there is no infinite count."); return new Complex((this.re * o.re + this.im * o.im) / d, (this.im * o.re - this.re * o.im) / d); }\n    abs() { return Math.hypot(this.re, this.im); }\n    arg() { return Math.atan2(this.im, this.re); }\n    conj() { return new Complex(this.re, -this.im); }\n    sqrt() { const r = Math.sqrt(this.abs()), t = this.arg() / 2; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    exp() { const m = Math.exp(this.re); return new Complex(m * Math.cos(this.im), m * Math.sin(this.im)); }\n    log() { return new Complex(Math.log(this.abs()), this.arg()); }\n    pow(n: number | bigint) { const k = Number(n), r = this.abs() ** k, t = this.arg() * k; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    toString() { return this.re === 0 ? `${this.im}i` : `${this.re} ${this.im < 0 ? "-" : "+"} ${Math.abs(this.im)}i`; }\n}\n\ninterface Point { x: bigint; y: bigint }\nconst Point = (f: Point): Point => ({ ...f });\n\nfunction norm(p: Point): bigint {\n    return p.x * p.x + p.y * p.y;\n}\n\nlet p = Point({ x: 3n, y: 4n });\nlet q = { ...p, x: 0n };\nlet label = ((_s) => {\n    if (_s === 25n) return "five";\n    { const n = _s; if (n > 100n) return "big"; }\n    return "other";\n})(norm(p));\nconsole.log(((_s) => {\n    if (_s !== null && _s.x === 0n) { const yy = _s.y; return `axis ${yy}`; }\n    return "off";\n})(q));\nfor (const i of blessedRange(0n, 3n)) {\n    console.log(i);\n}\nlet z = new Complex(3, 4);\nconsole.log(z.abs(), Infinity, Math.sqrt(2.0), [...[3n, 1n]].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)), BigInt("a,b".split(",").length));');
+      'export {};\nfunction blessedRange(a: bigint, b: bigint): bigint[] {\n    const out: bigint[] = [];\n    for (let i = a; i < b; i++) out.push(i);\n    return out;\n}\n\nclass Complex {\n    constructor(public re: number, public im: number) {}\n    add(o: Complex) { return new Complex(this.re + o.re, this.im + o.im); }\n    sub(o: Complex) { return new Complex(this.re - o.re, this.im - o.im); }\n    mul(o: Complex) { return new Complex(this.re * o.re - this.im * o.im, this.re * o.im + this.im * o.re); }\n    div(o: Complex) { const d = o.re * o.re + o.im * o.im; if (d === 0) throw new Error("Division by zero. Int is a count and there is no infinite count."); return new Complex((this.re * o.re + this.im * o.im) / d, (this.im * o.re - this.re * o.im) / d); }\n    abs() { return Math.hypot(this.re, this.im); }\n    arg() { return Math.atan2(this.im, this.re); }\n    conj() { return new Complex(this.re, -this.im); }\n    sqrt() { const r = Math.sqrt(this.abs()), t = this.arg() / 2; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    exp() { const m = Math.exp(this.re); return new Complex(m * Math.cos(this.im), m * Math.sin(this.im)); }\n    log() { return new Complex(Math.log(this.abs()), this.arg()); }\n    pow(n: number | bigint) { const k = Number(n), r = this.abs() ** k, t = this.arg() * k; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    toString() { return this.re === 0 ? `${this.im}i` : `${this.re} ${this.im < 0 ? "-" : "+"} ${Math.abs(this.im)}i`; }\n}\n\n' + tsShowHelper([["Point", ["x", "y"]]]) + '\n\ninterface Point { x: bigint; y: bigint }\nconst Point = (f: Point): Point => ({ ...f });\n\nfunction norm(p: Point): bigint {\n    return p.x * p.x + p.y * p.y;\n}\n\nlet p = Point({ x: 3n, y: 4n });\nlet q = { ...p, x: 0n };\nlet label = ((_s) => {\n    if (_s === 25n) return "five";\n    { const n = _s; if (n > 100n) return "big"; }\n    return "other";\n})(norm(p));\nconsole.log(((_s) => {\n    if (_s !== null && _s.x === 0n) { const yy = _s.y; return `axis ${yy}`; }\n    return "off";\n})(q));\nfor (const i of blessedRange(0n, 3n)) {\n    console.log(String(i));\n}\nlet z = new Complex(3, 4);\nconsole.log([blessedShow(z.abs()), blessedShow(Infinity), blessedShow(Math.sqrt(2.0)), blessedShow([...[3n, 1n]].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))), BigInt("a,b".split(",").length)].join(" "));');
   });
 });
 
@@ -151,21 +159,21 @@ describe("typescript emitter: indexing, ordering, comments", () => {
   const CHECK = 'function blessedCheck(x: number): number {\n    if (Number.isNaN(x)) throw new Error("Result is not a number. We will not pretend it is.");\n    return x;\n}\n\n';
   it("list reads are checked (lib es2020 has no .at); stores and map lookups are not", () => {
     expect(ts('let xs = [1, 2]\nxs[0] = 5\nlet m = {"a": 1}\nm["b"] = 2\nprint(xs[-1], m["a"] ?? 0)')).toBe(
-      'export {};\n' + AT + 'let xs = [1n, 2n];\nxs[Number(0n)] = 5n;\nlet m = new Map([["a", 1n]]);\nm.set("b", 2n);\nconsole.log(blessedAt(xs, -1n), (m.get("a") ?? null) ?? 0n);');
+      'export {};\n' + AT + 'let xs = [1n, 2n];\nxs[Number(0n)] = 5n;\nlet m = new Map([["a", 1n]]);\nm.set("b", 2n);\nconsole.log([blessedAt(xs, -1n), (m.get("a") ?? null) ?? 0n].join(" "));');
   });
   it("declarations used before they appear move to the top (record factories are consts)", () => {
-    expect(ts("print(sq(3))\nfn sq(n: Int) -> Int {\n    n * n\n}")).toBe("export {};\nfunction sq(n: bigint): bigint {\n    return n * n;\n}\n\nconsole.log(sq(3n));");
+    expect(ts("print(sq(3))\nfn sq(n: Int) -> Int {\n    n * n\n}")).toBe("export {};\nfunction sq(n: bigint): bigint {\n    return n * n;\n}\n\nconsole.log(String(sq(3n)));");
   });
   it("?? never mixes with || unparenthesized", () => {
-    expect(ts("let a: Bool? = null\nlet b = true\nprint(b or a ?? false)")).toBe("export {};\nlet a: boolean | null = null;\nlet b = true;\nconsole.log((b || a) ?? false);");
+    expect(ts("let a: Bool? = null\nlet b = true\nprint(b or a ?? false)")).toBe("export {};\n" + TSSHOW + "let a: boolean | null = null;\nlet b = true;\nconsole.log(blessedShow((b || a) ?? false));");
   });
   it("comments in empty blocks, after the last statement, and trailing", () => {
     expect(ts("fn f() {\n    -- nothing yet\n}\nloop {\n    print(1)\n    -- after\n}\nprint(2) -- trailing")).toBe(
-      "export {};\nfunction f() {\n    // nothing yet\n}\n\nwhile (true) {\n    console.log(1n);\n    // after\n}\nconsole.log(2n); // trailing");
+      "export {};\nfunction f() {\n    // nothing yet\n}\n\nwhile (true) {\n    console.log(String(1n));\n    // after\n}\nconsole.log(String(2n)); // trailing");
   });
   it("untyped lambdas get any unless a typed parameter gives context; NaN-capable math is checked", () => {
     expect(ts("let g = fn(x) { x }\nprint([1].map(fn(x) { x + 1 }), (-4.0).sqrt(), (4.0).sqrt())")).toBe(
-      'export {};\n' + CHECK + "let g = (x: any) => x;\nconsole.log([1n].map((x) => x + 1n), blessedCheck(Math.sqrt(-4.0)), Math.sqrt(4.0));");
+      'export {};\n' + CHECK + TSSHOW + 'let g = (x: any) => x;\nconsole.log([blessedShow([1n].map((x) => x + 1n)), blessedShow(blessedCheck(Math.sqrt(-4.0))), blessedShow(Math.sqrt(4.0))].join(" "));');
   });
 });
 
@@ -175,7 +183,7 @@ describe("typescript emitter: module scope and despite errors", () => {
   });
   it("the catch parameter cannot shadow an errName called err", () => {
     expect(ts('loop v in [1, 0] despite errors as err {\n    print(10 / v)\n}\nprint(err ?? "none")')).toBe(
-      'export {};\nfunction blessedDiv(a: bigint, b: bigint): bigint {\n    if (b === 0n) throw new Error("Division by zero. Int is a count and there is no infinite count.");\n    return a / b;\n}\n\nlet err: string | null = null;\nfor (const v of [1n, 0n]) {\n    try {\n        console.log(blessedDiv(10n, v));\n    } catch (_blessedErr) {\n        err = _blessedErr instanceof Error ? _blessedErr.message : String(_blessedErr);\n    }\n}\nconsole.log(err ?? "none");');
+      'export {};\nfunction blessedDiv(a: bigint, b: bigint): bigint {\n    if (b === 0n) throw new Error("Division by zero. Int is a count and there is no infinite count.");\n    return a / b;\n}\n\nlet err: string | null = null;\nfor (const v of [1n, 0n]) {\n    try {\n        console.log(String(blessedDiv(10n, v)));\n    } catch (_blessedErr) {\n        err = _blessedErr instanceof Error ? _blessedErr.message : String(_blessedErr);\n    }\n}\nconsole.log(err ?? "none");');
   });
 });
 
@@ -183,5 +191,20 @@ describe("typescript emitter: record patterns on a nullable subject", () => {
   it("test the subject for null before reading fields, even with only bindings", () => {
     const out = ts('record P { x: Int }\nlet p: P? = null\nprint(match p {\n    P(x: x) -> x\n    null -> 0\n})');
     expect(out).toContain("if (_s !== null) { const x = _s.x; return x; }");
+  });
+});
+
+describe("print fidelity helpers", () => {
+  it("Float(Complex) checks the imaginary part in both targets", () => {
+    const p = py("let z = 3 + 0i\nlet f = Float(z)");
+    expect(p).toContain("f = _cfloat(z)");
+    expect(p).toContain("def _cfloat(z):\n    if z.imag != 0:\n        raise ArithmeticError(\"Float(z) only works when z.im == 0.0. Did you mean z.re?\")\n    return z.real");
+    expect(ts("let z = 3 + 0i\nlet f = Float(z)")).toContain("let f = blessedComplexFloat(z);");
+  });
+  it("interpolation, String() and join render non-String values the BLESSED way", () => {
+    expect(ts('let x = 1.0\nlet s = "v=${x} n=${2}"')).toContain("let s = `v=${blessedShow(x)} n=${2n}`;");
+    expect(py('let x = 1.0\nlet s = "v=${x} n=${2}"')).toContain('s = f"v={_show(x)} n={2}"');
+    expect(ts("let s = String(true)")).toContain("let s = blessedShow(true);");
+    expect(py("let s = [1.5].join(\",\")")).toContain('s = ",".join(map(_show, [1.5]))');
   });
 });
