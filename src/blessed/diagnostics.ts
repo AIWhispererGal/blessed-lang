@@ -25,6 +25,9 @@ export const D = {
     : t === "Int" || t === "Float" ? `${t} is not Bool. Did you mean: if ${cond} > 0?`
     : `Condition is ${t}, not Bool. BLESSED is not interested in truthy/falsy load-bearing conventions that were always wrong. Please make it explicit.`,
   cannotAdd: (a: string, b: string, x: string, y: string) => `cannot add ${a} and ${b}. Did you mean: String(${x}) + ${y}? BLESSED will wait. Take your time.`,
+  cannotAddToString: (a: string, b: string, x: string, y: string) => `cannot add ${a} and ${b}. Did you mean: ${x} + String(${y})? BLESSED will wait. Take your time.`,
+  cannotNegate: (t: string) => `cannot negate ${t}. Only numbers have an opposite.`,
+  conversionArg: (conv: string, accepts: string[], got: string) => `${conv}() accepts ${accepts.join(", ")}. ${got} is not on the list.`,
   cannotOperate: (op: string, a: string, b: string) => `cannot apply '${op}' to ${a} and ${b}. We won't guess.`,
   cannotCompare: (a: string, b: string, x: string, y: string) => `${a} ≠ ${b}. We won't guess. Did you mean: ${x} == ${a}(${y})?`,
   complexOrder: () => `Complex numbers have no order. Neither does your argument.`,
