@@ -86,6 +86,7 @@ export const D = {
   floatFromComplex: () => `Float(z) only works when z.im == 0.0. Did you mean z.re?`,
   // formatter
   semicolonsVaporized: (n: number) => `Semicolon detected and vaporized ${n} time(s). Semicolons are optional and the formatter removes them. Suffer no more.`,
+  formatterCommentsAtRisk: () => `Some comments live inside expressions, where the formatter cannot yet follow them. Nothing was changed. Your comments are safe.`,
   formatterClean: () => `Formatter finished: Code was already perfectly aligned with the spec.`,
   // execution wrapper
   compileHeader: () => `--- BLESSED COMPILE ERRORS ---`,

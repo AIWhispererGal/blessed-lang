@@ -202,3 +202,15 @@ describe("formatter and checker agree on renames", () => {
     expect(f.formatted).toContain("let my_x = 2");
   });
 });
+
+describe("formatter never drops comments", () => {
+  it("leaves the source unchanged when a comment lives inside an expression", () => {
+    const src = "let xs = [\n    1, -- the first\n    2\n]\nprint(xs);";
+    const r = formatSource(src);
+    expect(r.formatted).toBe(src);
+    expect(r.logs).toEqual(["Formatter Notice: Some comments live inside expressions, where the formatter cannot yet follow them. Nothing was changed. Your comments are safe."]);
+  });
+  it("still formats when every comment has a place", () => {
+    expect(formatSource("let x = 1; -- keep\n-- also\nprint(x)").formatted).toBe("let x = 1 -- keep\n-- also\nprint(x)");
+  });
+});

@@ -1,5 +1,6 @@
 import type { Program, Stmt, Expr, TypeExpr, Pattern, Param } from "./ast";
 import { parse } from "./parser";
+import { tokenize } from "./lexer";
 import { D, formatDiagnostic, camelCaseName } from "./diagnostics";
 import { showFloatLiteral, plainDecimal } from "./values";
 
@@ -35,7 +36,14 @@ export function formatSource(code: string): { formatted: string; logs: string[] 
   }, false);
   if (renames.size) walkNames(program, n => renames.get(n) ?? n, true);
   if (semis) logs.push(`Formatter Notice: ${D.semicolonsVaporized(semis)}`);
-  return { formatted: format(program), logs };
+  const formatted = format(program);
+  // comments inside expressions (a list literal, call arguments) are not in the AST: never format them away
+  if (countComments(formatted) < countComments(code)) return { formatted: code, logs: [`Formatter Notice: ${D.formatterCommentsAtRisk()}`] };
+  return { formatted, logs };
+}
+
+function countComments(src: string): number {
+  try { return tokenize(src).filter(t => t.kind === "Comment").length; } catch { return -1; }
 }
 
 export function format(p: Program): string {
