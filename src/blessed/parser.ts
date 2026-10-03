@@ -28,8 +28,8 @@ export function parseExprTokens(tokens: Token[]): Expr {
 }
 
 const BIN_PREC: Record<string, number> = {
-  "??": 1, "or": 2, "and": 3, "==": 4, "!=": 4, "is": 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "..": 5.5,
-  "+": 6, "-": 6, "*": 7, "/": 7, "%": 7,
+  "??": 1, "or": 2, "and": 3, "==": 4, "!=": 4, "is": 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "..": 6,
+  "+": 7, "-": 7, "*": 8, "/": 8, "%": 8,
 };
 
 class Parser {
@@ -261,7 +261,7 @@ class Parser {
       const prec = BIN_PREC[op];
       if (prec === undefined || prec < minPrec) break;
       this.next(); this.skipNewlines();
-      const right = this.parseExpr(op === ".." ? BIN_PREC["+"] : prec + 1);
+      const right = this.parseExpr(prec + 1);
       if (op === "..") {
         if (this.atOp("..")) this.fail(D.expected("end of range", "'..'"));
         left = { kind: "Range", start: left, end: right, span: left.span };

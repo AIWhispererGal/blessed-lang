@@ -134,6 +134,7 @@ describe("parser expressions", () => {
     expect(expr("-1..3")).toMatchObject({ kind: "Range", start: { kind: "Unary" } });
     expect(expr("a..b < c")).toMatchObject({ op: "<", left: { kind: "Range" } });
     expect(stmt("loop i in 0..n + 1 {\n}")).toMatchObject({ iter: { kind: "Range", end: { op: "+" } } });
+    expect(expr("a < b..c")).toMatchObject({ op: "<", right: { kind: "Range" } });
     expect(err("a..b..c").message).toContain("end of range");
   });
   it("negative complex fold", () => {
