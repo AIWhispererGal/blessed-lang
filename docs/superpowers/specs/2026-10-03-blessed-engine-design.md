@@ -130,15 +130,19 @@ let label = match n {
 fail "disk is on fire"
 
 loop item in items despite errors as e {
-    print("skipped: ${e}")
+    process(item)
 }
+print(e ?? "nothing was skipped")
 ```
 
 - `fail expr` raises with a String message. `fail` with a non-String is a
   checker error.
-- Only `despite errors` catches. The optional `as name` binds the message as
-  a String for the rest of the loop body. The failing iteration's remaining
+- Only `despite errors` catches. The failing iteration's remaining
   statements are skipped and the loop continues.
+- The optional `as name` declares `name` as a `String?` in the scope that
+  contains the loop. It is null until an iteration fails, then holds the most
+  recent failure's message. The body of later iterations can read it, and so
+  can code after the loop. Because it is `String?`, the null rules apply.
 - Runtime failures raised by the interpreter (division by zero, Int plus
   String on dynamically typed values, index out of range, recursion limit)
   are the same kind of error and are caught the same way. The step budget is
