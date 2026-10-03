@@ -16,7 +16,7 @@ export const KEYWORDS: ReadonlySet<string> = new Set([
 
 const OPS3 = ["==="];
 const OPS2 = ["==", "!=", "<=", ">=", "??", "..", "->"];
-const OPS1 = "+-*/%<>=!(){}[],:.|_";
+const OPS1 = "+-*/%<>=!(){}[],:.|_?;";
 
 const isIdentStart = (c: string) => /[A-Za-z_]/.test(c);
 const isIdentChar = (c: string) => /[A-Za-z0-9_]/.test(c);
