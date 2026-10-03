@@ -17,7 +17,7 @@ import {
   translatePythonToBlessed, 
   translateBlessedToTypeScript, 
   translateTypeScriptToBlessed 
-} from './blessed/compiler';
+} from './blessed';
 
 // Predefined examples
 const EXAMPLES: Record<string, { name: string; description: string; code: string }> = {
