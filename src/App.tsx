@@ -18,105 +18,8 @@ import {
   translateBlessedToTypeScript, 
   translateTypeScriptToBlessed 
 } from './blessed';
-
-// Predefined examples
-const EXAMPLES: Record<string, { name: string; description: string; code: string }> = {
-  hello: {
-    name: "Hello World",
-    description: "The canonical demonstration of zero-suffering list iteration.",
-    code: `-- hello.blessed
-let recipients = ["World", "Nurse", "Darkness my old friend"]
-
-loop r in recipients {
-    print("Hello, \${r}!")
-}
-`
-  },
-  nullSafe: {
-    name: "Safe Null Handling",
-    description: "Demonstrating explicit nullability checks and null-coalescing.",
-    code: `-- Safe Null handling
-let name: String = "Alice"
-let nick: String? = null
-
--- This line would trigger a compile error if uncommented:
--- print(nick)
-
--- But this is fine:
-print("Nickname: \${nick ?? "no nickname"}")
-
-if let actualNick = nick {
-    print("Nickname is indeed: \${actualNick}")
-}
-
-let activeNick: String? = "Al"
-if let actualNick = activeNick {
-    print("Nickname is indeed: \${actualNick}")
-}
-`
-  },
-  strictTypes: {
-    name: "Strict Types",
-    description: "Witness the compiler save you from silent conversions.",
-    code: `-- Strict Types. BLESSED never coerces types silently.
-let x = 5
-let y = 10
-let z = x + y
-print("Sum is: \${z}")
-
--- TRY UN-COMMENTING THE ERRORS BELOW TO SEE THE COMPILER PREVENT DISASTER:
--- let badCoercion = "five"
--- let total = x + badCoercion
-`
-  },
-  oneEquality: {
-    name: "One Equality & Identity",
-    description: "Comparing values and instances without the scars of dynamic identity.",
-    code: `-- BLESSED has exactly one equality operator: ==
-let listA = [1, 2, 3]
-let listB = [1, 2, 3]
-let listC = listA
-
-print("Is listA equivalent in values to listB? \${listA == listB}") -- true
-print("Are listA and listB the SAME memory object? \${listA is listB}") -- false
-print("Are listA and listC the SAME memory object? \${listA is listC}") -- true
-
--- BLESSED prevents type-mismatch comparisons:
--- let five = 5
--- let strFive = "5"
--- print(five == strFive) -- CompileError: String ≠ Int. We won't guess.
-`
-  },
-  loopModifier: {
-    name: "The Graceful Loop",
-    description: "Using the single loop keyword with different shapes and error margins.",
-    code: `-- BLESSED has exactly one loop keyword: loop
-
--- 1. Iterating a collection
-let fruits = ["apple", "banana", "mango"]
-loop f in fruits {
-    print("Munching on \${f}")
-}
-
--- 2. Repeating while condition holds
-let count = 1
-loop count <= 3 {
-    print("Countdown: \${count}")
-    count = count + 1
-}
-
--- 3. Despite errors: Keep going even if some items fail
-let mixedCollection = [100, 0, "corrupted_payload", 50]
-loop item in mixedCollection despite errors {
-    if item == "corrupted_payload" {
-        -- Simulating throwing error by doing illegal operation
-        let division = item + 10
-    }
-    print("Processed valid unit: \${item}")
-}
-`
-  }
-};
+import { EXAMPLES } from './blessed/examples';
+import { COMMANDMENTS } from './blessed/commandments';
 
 // Quiz questions
 const QUIZ_QUESTIONS = [
@@ -215,11 +118,11 @@ export default function App() {
       ]);
       setTerminalOutput([]);
     } else {
-      setTerminalErrors(analysis.warnings.length > 0 ? [
-        "--- COMPILER WARNINGS (Blessed let you slide, but holds an opinion) ---",
-        ...analysis.warnings
-      ] : []);
-      setTerminalOutput(execution.stdout.length > 0 ? execution.stdout : ["(Program executed successfully with no output)"]);
+      setTerminalErrors([
+        ...(analysis.warnings.length > 0 ? ["--- COMPILER WARNINGS (Blessed let you slide, but holds an opinion) ---", ...analysis.warnings] : []),
+        ...execution.errors
+      ]);
+      setTerminalOutput(execution.stdout.length > 0 || execution.errors.length > 0 ? execution.stdout : ["(Program executed successfully with no output)"]);
     }
   };
 
@@ -352,7 +255,7 @@ export default function App() {
               onClick={() => setActiveTab('spec')}
               className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'spec' ? 'bg-amber-600 text-stone-900' : 'text-stone-300 hover:bg-stone-800'}`}
             >
-              The 10 Commandments
+              The 20 Commandments
             </button>
             <button 
               onClick={() => setActiveTab('quiz')}
@@ -694,6 +597,7 @@ export default function App() {
                 <div className="flex-1 flex min-h-[350px] bg-stone-950/70 p-4 font-mono text-sm leading-relaxed overflow-y-auto">
                   <pre className="text-amber-400/90 select-all w-full whitespace-pre-wrap">{translationOutput || "// Translation will appear here"}</pre>
                 </div>
+                {transSourceLang !== 'blessed' && <p className="text-xs text-stone-500 italic px-4 py-2 border-t border-stone-800">Best effort. Python and TypeScript are read line by line, not parsed. BLESSED output is exact.</p>}
               </div>
 
             </div>
@@ -708,218 +612,47 @@ export default function App() {
             {/* INTRO */}
             <div className="text-center space-y-4 py-6">
               <span className="text-xs tracking-widest text-amber-500 font-mono uppercase bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">The Specification Document</span>
-              <h2 className="text-3xl font-extrabold text-stone-100">The 10 Commandments of BLESSED</h2>
+              <h2 className="text-3xl font-extrabold text-stone-100">The 20 Commandments of BLESSED</h2>
               <p className="text-stone-400 text-sm max-w-xl mx-auto leading-relaxed">
                 "Every decision in BLESSED was made by asking a single question: what would cause the least suffering, to the most people, for the longest time?"
               </p>
             </div>
 
-            {/* THE TEN RULES */}
+            {/* THE TWENTY RULES */}
             <div className="space-y-6">
               
-              {/* Command 1 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§1. THE INDEX PRINCIPLE</span>
-                    <h3 className="text-lg font-bold text-stone-100">Arrays are zero-indexed, and the index is the offset from the start</h3>
+              {COMMANDMENTS.map(c => {
+                const verdictClass = c.verdict === "Obvious" ? "bg-emerald-950/40 text-emerald-400 border-emerald-900/40"
+                  : c.verdict === "Sensible" ? "bg-yellow-950/40 text-yellow-400 border-yellow-900/40"
+                  : c.verdict === "Correct" ? "bg-sky-950/40 text-sky-400 border-sky-900/40"
+                  : c.verdict === "Overdue" ? "bg-rose-950/40 text-rose-400 border-rose-900/40"
+                  : "bg-amber-950/40 text-amber-400 border-amber-900/40";
+                return (
+                  <div key={c.n} className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <span className="text-xs text-amber-500 font-mono tracking-wider">§{c.n}. {c.tag}</span>
+                        <h3 className="text-lg font-bold text-stone-100">{c.title}</h3>
+                      </div>
+                      <span className={`text-xs px-2.5 py-1 border rounded-full font-mono uppercase font-bold whitespace-nowrap ${verdictClass}`}>Verdict: {c.verdict}</span>
+                    </div>
+                    <p className="text-stone-400 text-sm leading-relaxed">{c.body}</p>
+                    <pre className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300 overflow-x-auto whitespace-pre">{c.snippet}</pre>
+                    <div className="flex justify-end gap-4">
+                      <button onClick={() => { setBlessedCode(c.snippet); setActiveTab('playground'); setTerminalOutput([]); setTerminalErrors([]); setFormatterLogs([]); }}
+                        className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1">
+                        Try it <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                      {c.example && (
+                        <button onClick={() => { loadExample(c.example!); setActiveTab('playground'); }}
+                          className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1">
+                          Load {EXAMPLES[c.example].name} <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 rounded-full font-mono uppercase font-bold">Verdict: Obvious</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  The first element is at index <strong>0</strong>. This is not arbitrary. An index is an offset: how far from the beginning? The beginning is zero distance from itself. This is geometry. Slicing values `0..2` excludes the end, making range calculation trivial: <code className="text-amber-400">length = end - start</code>.
-                </p>
-                <div className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300">
-                  <span className="text-stone-500">-- Slicing matches math perfectly</span>
-                  <div>let fruits = ["apple", "banana", "mango"]</div>
-                  <div>fruits[0..2] <span className="text-stone-500">-- ["apple", "banana"]. Length is 2 - 0 = 2.</span></div>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => loadExample('hello')}
-                    className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-                  >
-                    Load Hello World Example <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Command 2 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§2. THE TYPE SANCTITY</span>
-                    <h3 className="text-lg font-bold text-stone-100">Types are inferred, explicit when ambiguous, and never coerced silently</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 rounded-full font-mono uppercase font-bold">Verdict: Sensible</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  BLESSED infers types from assignment. You may annotate for clarity. What BLESSED will not do, under any circumstances, is silently convert one type to another and pretend nothing happened. If you add a string and an integer, BLESSED will stop and ask what you meant. Out loud.
-                </p>
-                <div className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300">
-                  <div>let x = 5 <span className="text-stone-500">-- Inferred: Int</span></div>
-                  <div>let y = "five" <span className="text-stone-500">-- Inferred: String</span></div>
-                  <div className="text-red-400">x + y <span className="text-stone-500">-- CompileError: cannot add Int and String. Did you mean String(x) + y?</span></div>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => loadExample('strictTypes')}
-                    className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-                  >
-                    Load Strict Types Example <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Command 3 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§3. THE EQUALITY COMMAND</span>
-                    <h3 className="text-lg font-bold text-stone-100">There is one equality operator. It checks equality.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 rounded-full font-mono uppercase font-bold">Verdict: Obvious</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  <code className="text-amber-400">==</code> checks if two values are equal. Equal means: same type, same value. There is no <code className="text-amber-400">===</code> because <code className="text-amber-400">==</code> already does what <code className="text-amber-400">===</code> was invented to compensate for. If you want to check if two things are the same object in memory, that is <code className="text-amber-400">is</code>.
-                </p>
-                <div className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300">
-                  <div>5 == 5 <span className="text-stone-500">-- true</span></div>
-                  <div className="text-red-400">"5" == 5 <span className="text-stone-500">-- CompileError: String ≠ Int. We won't guess.</span></div>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => loadExample('oneEquality')}
-                    className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-                  >
-                    Load Equality Example <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Command 4 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§4. THE STYLE BOUNDARY</span>
-                    <h3 className="text-lg font-bold text-stone-100">Whitespace is not syntax. Braces are syntax. Indentation is style.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 rounded-full font-mono uppercase font-bold">Verdict: Sensible</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  Code blocks are delimited by <code className="text-amber-400">{`{ }`}</code>. Indentation is formatted automatically. Suffer no more layout issues on Slack copy-paste. The 4-space indent formatter is built-in and final.
-                </p>
-                <div className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300">
-                  <div>if x &gt; 0 &#123;</div>
-                  <div>    print("positive") <span className="text-stone-500">-- Indented for humans, closed for compile</span></div>
-                  <div>&#125;</div>
-                </div>
-              </div>
-
-              {/* Command 5 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§5. THE NULL REDEMPTION</span>
-                    <h3 className="text-lg font-bold text-stone-100">There is one null. It is called null. It means "no value."</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 rounded-full font-mono uppercase font-bold">Verdict: Obvious</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  A variable that might be null must be declared as nullable with <code className="text-amber-400">?</code>, and you must handle the null case using coalescing <code className="text-amber-400">??</code> or <code className="text-amber-400">if let</code> before you can access the inner value. No more runtime crash exceptions.
-                </p>
-                <div className="bg-stone-950 rounded-lg p-3 border border-stone-800/80 font-mono text-xs text-stone-300">
-                  <div>let nick: String? = null</div>
-                  <div className="text-red-400">print(nick) <span className="text-stone-500">-- CompileError: nick may be null. Handle it first.</span></div>
-                  <div>print(nick ?? "no nickname") <span className="text-stone-500">-- Safe and elegant</span></div>
-                </div>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => loadExample('nullSafe')}
-                    className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-                  >
-                    Load Safe Null Example <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Command 6 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§6. THE NAMING CODE</span>
-                    <h3 className="text-lg font-bold text-stone-100">Variable names are case-sensitive. camelCase is the convention.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 rounded-full font-mono uppercase font-bold">Verdict: Weary</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  <code className="text-amber-400">userName</code> is a variable (camelCase). <code className="text-amber-400">UserProfile</code> is a type (PascalCase). <code className="text-amber-400">MAX_SIZE</code> is a constant (SCREAMING_SNAKE). No double underscores on both sides. Formatter fixes this automatically.
-                </p>
-              </div>
-
-              {/* Command 7 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§7. THE SEMICOLON PEACE</span>
-                    <h3 className="text-lg font-bold text-stone-100">Semicolons are optional. The formatter removes them.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 rounded-full font-mono uppercase font-bold">Verdict: Obvious</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  Write semicolons out of old habit, and let the formatter silently clean them. Semicolons are redundant noise. You have better things to think about.
-                </p>
-              </div>
-
-              {/* Command 8 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§8. THE INTERPOLATION HARMONY</span>
-                    <h3 className="text-lg font-bold text-stone-100">There is one string interpolation syntax. It uses {"${ }"}</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 rounded-full font-mono uppercase font-bold">Verdict: Obvious</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  No `f-string` flags, no `%s` format templates, no triple braces. Plain double quotes enclosing <code className="text-amber-400">{"${expression}"}</code> does the job everywhere.
-                </p>
-              </div>
-
-              {/* Command 9 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§9. THE BOOLEAN PURITY</span>
-                    <h3 className="text-lg font-bold text-stone-100">Boolean is a type. True and false are its two values.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 rounded-full font-mono uppercase font-bold">Verdict: Weary</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  No "truthy" or "falsy" values. Conditionals accept only <code className="text-amber-400">Bool</code>. If you pass an empty string, an array, or an integer to an `if` statement, BLESSED will compile-fail and demand a true assertion.
-                </p>
-              </div>
-
-              {/* Command 10 */}
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 space-y-4 hover:border-amber-500/25 transition-all">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs text-amber-500 font-mono tracking-wider">§10. THE SINGLE LOOP</span>
-                    <h3 className="text-lg font-bold text-stone-100">There is one loop construct: loop.</h3>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 rounded-full font-mono uppercase font-bold">Verdict: Graceful</span>
-                </div>
-                <p className="text-stone-400 text-sm leading-relaxed">
-                  No distinction between `for`, `while`, or infinite `do-while`. Just use <code className="text-amber-400">loop</code>. Add <code className="text-amber-400">despite errors</code> to skip over lines that crash and resume iteration gracefully.
-                </p>
-                <div className="flex justify-end">
-                  <button 
-                    onClick={() => loadExample('loopModifier')}
-                    className="text-xs text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-                  >
-                    Load Loop Example <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
+                );
+              })}
 
             </div>
 
