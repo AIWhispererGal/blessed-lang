@@ -42,6 +42,8 @@ export const D = {
   immutableRecord: (rec: string) => `${rec} is a record and records do not change. Did you mean: let next = value with { field: newValue }?`,
   notExhaustive: () => `This match does not cover every case. Add '_ ->' or a binding arm. BLESSED does not do surprise endings.`,
   armTypeMismatch: (a: string, b: string) => `Match arms disagree: ${a} vs ${b}. One match, one type.`,
+  namedArgsOnFn: (name: string) => `${name} is a function, not a record. Functions take arguments in order. Records take fields by name. Choose one.`,
+  missingReturn: (name: string, t: string) => `'${name}' promises ${t} but can finish without returning one. Promises matter.`,
   returnOutsideFn: () => `'return' outside a function. Return to where?`,
   failNotString: (t: string) => `'fail' takes a String message, not ${t}. Say what went wrong in words.`,
   lengthIsProperty: () => `'length' is a property, not a call. It is not doing anything. Just write .length.`,

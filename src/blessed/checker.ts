@@ -61,6 +61,27 @@ function unify(a: Type, b: Type): Type | undefined {
   return a.k === "Nullable" || b.k === "Nullable" ? T.nullable(ai) : a;
 }
 
+/** A statement list diverges if it always leaves via `fail` or `return` (so it produces no value). */
+function diverges(stmts: Stmt[]): boolean {
+  const last = stmts[stmts.length - 1];
+  if (!last) return false;
+  if (last.kind === "Fail" || last.kind === "Return") return true;
+  if (last.kind === "If" || last.kind === "IfLet") return !!last.else && diverges(last.then) && diverges(last.else);
+  return false;
+}
+
+/** Conservative: a function body terminates if every path ends in return, fail, an implicit-return expression, or a forever loop. */
+function terminates(stmts: Stmt[]): boolean {
+  const last = stmts[stmts.length - 1];
+  if (!last) return false;
+  switch (last.kind) {
+    case "Return": case "Fail": case "ExprStmt": return true;
+    case "Loop": return last.shape === "forever";
+    case "If": case "IfLet": return !!last.else && terminates(last.then) && terminates(last.else);
+    default: return false;
+  }
+}
+
 interface Binding { type: Type; isConst: boolean }
 class Scope {
   vars = new Map<string, Binding>();
@@ -110,14 +131,20 @@ class Checker {
 
   // ---------- statements
   block(stmts: Stmt[], scope: Scope) {
-    for (const s of stmts) if (s.kind === "RecordDecl") this.declareRecord(s);        // records are visible before use
+    const declared = stmts.filter((s): s is Extract<Stmt, { kind: "RecordDecl" }> => s.kind === "RecordDecl" && this.declareRecord(s));   // records are visible before use
+    for (const s of declared) this.resolveRecordFields(s);                              // field types too, so earlier code can construct and read them
     for (const s of stmts) if (s.kind === "FnDecl") this.declareFn(s, scope);          // functions can be mutually recursive
     for (const s of stmts) this.stmt(s, scope);
   }
 
-  declareRecord(s: Extract<Stmt, { kind: "RecordDecl" }>) {
-    if (this.records.has(s.name)) { this.err(s.span.line, D.redeclared(s.name)); return; }
+  declareRecord(s: Extract<Stmt, { kind: "RecordDecl" }>): boolean {
+    if (this.records.has(s.name)) { this.err(s.span.line, D.redeclared(s.name)); return false; }
     this.records.set(s.name, new Map());
+    return true;
+  }
+  resolveRecordFields(s: Extract<Stmt, { kind: "RecordDecl" }>) {
+    const fields = this.records.get(s.name)!;
+    for (const f of s.fields) { if (fields.has(f.name)) this.err(s.span.line, D.duplicateField(f.name)); else fields.set(f.name, this.resolveType(f.type)); }
   }
   declareFn(s: Extract<Stmt, { kind: "FnDecl" }>, scope: Scope) {
     if (scope.vars.has(s.name)) { this.err(s.span.line, D.redeclared(s.name)); return; }
@@ -212,15 +239,11 @@ class Checker {
       }
       case "FnDecl": {
         const b = scope.vars.get(s.name); if (!b || b.type.k !== "Fn") return;
-        const ret = this.fnBody(s.params, b.type.params, s.ret ? b.type.ret : undefined, s.body, scope, s.span.line);
+        const ret = this.fnBody(s.params, b.type.params, s.ret ? b.type.ret : undefined, s.body, scope, s.span.line, s.name);
         if (!s.ret) b.type = T.fn(b.type.params, ret);
         return;
       }
-      case "RecordDecl": {
-        const fields = this.records.get(s.name)!;
-        for (const f of s.fields) { if (fields.has(f.name)) this.err(s.span.line, D.duplicateField(f.name)); fields.set(f.name, this.resolveType(f.type)); }
-        return;
-      }
+      case "RecordDecl": return;     // declared and resolved in block()'s pre-pass
       case "Return": {
         const fs = scope.fn();
         if (!fs) { this.err(s.span.line, D.returnOutsideFn()); if (s.expr) this.expr(s.expr, scope); return; }
@@ -238,7 +261,7 @@ class Checker {
   }
 
   /** Checks a function body; returns the function's return type. */
-  fnBody(params: Param[], paramTypes: Type[], declaredRet: Type | undefined, body: Stmt[], outer: Scope, line: number): Type {
+  fnBody(params: Param[], paramTypes: Type[], declaredRet: Type | undefined, body: Stmt[], outer: Scope, line: number, name: string): Type {
     const scope = new Scope(outer, { declared: declaredRet, inferred: [] });
     params.forEach((p, i) => {
       this.checkName(p.span.line, p.name);
@@ -249,7 +272,10 @@ class Checker {
     if (tail) {
       if (declaredRet) this.expect(tail.line, declaredRet, tail.type, tail.expr); else scope.fnRet!.inferred.push(tail.type);
     }
-    if (declaredRet) return declaredRet;
+    if (declaredRet) {
+      if (declaredRet.k !== "Nullable" && declaredRet.k !== "Unknown" && !terminates(body)) this.err(line, D.missingReturn(name, showType(declaredRet)));
+      return declaredRet;
+    }
     const inferred = scope.fnRet!.inferred;
     if (inferred.length === 0) return T.Null;
     let ret = inferred[0];
@@ -286,6 +312,9 @@ class Checker {
     this.err(line, D.typeMismatch(showType(expected), showType(actual)));
   }
 
+  /** Renders an expression as an operand of a binary fix-it, parenthesized when it is itself a binary. */
+  operand(e: Expr): string { return e.kind === "Binary" ? `(${this.src(e)})` : this.src(e); }
+
   /** Short source-ish rendering of an expression for messages. */
   src(e: Expr): string {
     switch (e.kind) {
@@ -298,7 +327,7 @@ class Checker {
       case "Index": return `${this.src(e.obj)}[${this.src(e.index)}]`;
       case "Call": return `${this.src(e.callee)}(...)`;
       case "Unary": return `${e.op === "not" ? "not " : "-"}${this.src(e.expr)}`;
-      case "Binary": { const side = (x: Expr) => x.kind === "Binary" ? `(${this.src(x)})` : this.src(x); return `${side(e.left)} ${e.op} ${side(e.right)}`; }
+      case "Binary": return `${this.operand(e.left)} ${e.op} ${this.operand(e.right)}`;
       default: return "expression";
     }
   }
@@ -318,7 +347,7 @@ class Checker {
         return b.type;
       }
       case "ListLit": {
-        const want = expected?.k === "List" ? expected.el : undefined;
+        const want = expected?.k === "List" && expected.el.k !== "Unknown" ? expected.el : undefined;   // List<Unknown> (from `[]`) is no expectation
         if (e.items.length === 0) return T.list(want ?? T.Unknown);
         const first = this.expr(e.items[0], scope, want);
         if (want) this.expect(e.span.line, want, first, e.items[0]);
@@ -351,7 +380,7 @@ class Checker {
       case "Lambda": {
         const want = expected?.k === "Fn" ? expected : undefined;
         const params = e.params.map((p, i) => p.type ? this.resolveType(p.type) : want?.params[i] ?? this.err(p.span.line, D.cannotInfer(p.name)));
-        const ret = this.fnBody(e.params, params, e.ret ? this.resolveType(e.ret) : undefined, e.body, scope, e.span.line);
+        const ret = this.fnBody(e.params, params, e.ret ? this.resolveType(e.ret) : undefined, e.body, scope, e.span.line, "fn");
         return T.fn(params, ret);
       }
       case "Call": return this.call(e, scope);
@@ -433,8 +462,8 @@ class Checker {
       return T.Complex;
     }
     if (l.k !== r.k) {
-      if (e.op === "+" && ((l.k === "Int" || l.k === "Float") && r.k === "String")) return this.err(line, D.cannotAdd(l.k, r.k, this.src(e.left), this.src(e.right)));
-      if (e.op === "+" && (l.k === "String" && (r.k === "Int" || r.k === "Float"))) return this.err(line, D.cannotAddToString(r.k, l.k, this.src(e.left), this.src(e.right)));
+      if (e.op === "+" && ((l.k === "Int" || l.k === "Float") && r.k === "String")) return this.err(line, D.cannotAdd(l.k, r.k, this.operand(e.left), this.operand(e.right)));
+      if (e.op === "+" && (l.k === "String" && (r.k === "Int" || r.k === "Float"))) return this.err(line, D.cannotAddToString(r.k, l.k, this.operand(e.left), this.operand(e.right)));
       return this.err(line, D.cannotOperate(e.op, showType(l), showType(r))) && (cmp ? T.Bool : T.Unknown);
     }
     if (cmp) { if (["Int", "Float", "String"].includes(l.k)) return T.Bool; return this.err(line, D.cannotOperate(e.op, showType(l), showType(r))) && T.Bool; }
@@ -475,6 +504,7 @@ class Checker {
     // method call
     if (e.callee.kind === "Field") {
       const obj = this.exprNonNull(e.callee.obj, scope); const m = e.callee.name;
+      this.namedArgs(e, scope, obj.k !== "Unknown");
       if (obj.k === "Record") {
         const ft = this.records.get(obj.name)?.get(m);
         if (!ft) return this.err(line, D.noField(obj.name, m));
@@ -488,9 +518,17 @@ class Checker {
       return this.method(obj, m, e.args, scope, line);
     }
     const f = this.exprNonNull(e.callee, scope);
+    this.namedArgs(e, scope, f.k === "Fn");
     if (f.k === "Unknown") { e.args.forEach(a => this.expr(a, scope)); return T.Unknown; }
     if (f.k !== "Fn") { e.args.forEach(a => this.expr(a, scope)); return this.err(line, D.notCallable(showType(f))); }
     return this.applyFn(f, e.args, scope, line, this.src(e.callee));
+  }
+
+  /** Named arguments only belong to record construction. Their values are still checked so names inside them resolve. */
+  namedArgs(e: Extract<Expr, { kind: "Call" }>, scope: Scope, isFn: boolean) {
+    if (!e.named.length) return;
+    if (isFn) this.err(e.span.line, D.namedArgsOnFn(this.src(e.callee)));
+    for (const n of e.named) this.expr(n.value, scope);
   }
 
   applyFn(f: Type, args: Expr[], scope: Scope, line: number, name: string): Type {
@@ -520,7 +558,7 @@ class Checker {
       case "List": {
         const el = obj.el;
         switch (m) {
-          case "push": need(0, el); return obj;
+          case "push": { if (el.k === "Unknown") return T.list(argT(0)); need(0, el); return obj; }   // [].push(x) learns its element type
           case "map": { const want = T.fn([el], T.Unknown); const ft = argT(0, want); this.expect(line, want, ft, args[0]); return T.list(ft.k === "Fn" ? ft.ret : T.Unknown); }
           case "filter": { const want = T.fn([el], T.Bool); const ft = argT(0, want); this.expect(line, want, ft, args[0]); return obj; }
           case "reduce": { const init = argT(1); const want = T.fn([init, el], init); const ft = argT(0, want); this.expect(line, want, ft, args[0]); return init; }
@@ -569,13 +607,14 @@ class Checker {
       const armScope = new Scope(scope);
       const p = arm.pattern;
       if (p.kind === "PWild" || (p.kind === "PBind" && !arm.guard)) exhaustive = true;
-      if (p.kind === "PLit" && p.value.kind === "BoolLit") { if (p.value.value) sawTrue = true; else sawFalse = true; }
+      if (p.kind === "PLit" && p.value.kind === "BoolLit" && !arm.guard) { if (p.value.value) sawTrue = true; else sawFalse = true; }
       // a binding or wildcard before any `null ->` arm can still see null
       const patSubject = p.kind === "PLit" && p.value.kind === "NullLit" ? subj : (p.kind === "PBind" || p.kind === "PWild") && !sawNull ? subj : inner;
       if (p.kind === "PLit" && p.value.kind === "NullLit") sawNull = true;
       this.pattern(p, patSubject, armScope, arm.span.line);
       if (arm.guard) this.condition(arm.guard, armScope);
       const t = this.blockValue(arm.body, armScope, result ?? expected)?.type ?? T.Null;
+      if (diverges(arm.body)) continue;      // an arm that fails or returns contributes no value
       if (!result) { result = t; continue; }
       const u = unify(result, t);
       if (u) result = u; else this.err(arm.span.line, D.armTypeMismatch(showType(result), showType(t)));

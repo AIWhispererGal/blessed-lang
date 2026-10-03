@@ -157,3 +157,99 @@ describe("checker: functions, records, match, errors", () => {
     expect(errors('let b: Int = Int("1")')[0]).toContain("may be null");
   });
 });
+
+describe("checker: review fixes", () => {
+  it("[] learns its element type from the first assignment", () => {
+    expect(errors('let xs = []\nxs = [1]\nxs = ["a"]')).toEqual(["3: Expected Int but got String. Types are not suggestions."]);
+  });
+  it("[].push(x) learns its element type", () => {
+    expect(errors('let xs = []\nlet ys = xs.push(1)\nprint(ys[0] + "a")')[0]).toContain("3: cannot add Int and String");
+  });
+  it("guarded Bool literal arms do not count toward exhaustiveness", () => {
+    expect(errors("let b = true\nlet c = false\nlet s = match b {\ntrue if c -> 1\nfalse -> 2\n}")).toEqual(["3: This match does not cover every case. Add '_ ->' or a binding arm. BLESSED does not do surprise endings."]);
+    clean("let b = true\nlet s = match b {\ntrue -> 1\nfalse -> 2\n}");
+  });
+  it("records can be used before their declaration", () => {
+    clean("fn make() -> Int {\nlet p = P(x: 1)\np.x\n}\nrecord P { x: Int }\nprint(make())");
+    expect(errors("record P { x: Int, x: Int }")).toEqual(["1: Field 'x' given twice. Once was enough."]);
+  });
+  it("arms that fail or return contribute no value", () => {
+    clean('let n = 1\nlet s: Int = match n {\n0 -> {\nfail "no"\n}\n_ -> 5\n}');
+    clean("fn f(n: Int) -> Int {\nreturn match n {\n0 -> {\nreturn 1\n}\n_ -> 5\n}\n}");
+  });
+  it("named arguments on a function call are an error, and their values are still checked", () => {
+    const es = errors("fn f(a: Int, b: Int) -> Int { a }\nprint(f(1, b: undefinedThing))");
+    expect(es).toContain("2: f is a function, not a record. Functions take arguments in order. Records take fields by name. Choose one.");
+    expect(es.some(m => m.includes("'undefinedThing' is not defined"))).toBe(true);
+  });
+  it("declared non-nullable returns must return on every path", () => {
+    expect(errors("fn f() -> Int {\nif true {\nreturn 1\n}\n}")).toEqual(["1: 'f' promises Int but can finish without returning one. Promises matter."]);
+    clean("fn g(n: Int) -> Int {\nif n > 0 {\nreturn 1\n} else {\nreturn 2\n}\n}");
+    clean("fn h(n: Int) -> Int {\nlet m = n + 1\nm * 2\n}");
+    clean("fn k(n: Int) -> Int? {\nif n > 0 {\nreturn 1\n}\n}");
+    expect(errors("let f: Fn(Int) -> Int = fn(n: Int) -> Int {\nif n > 0 {\nreturn 1\n}\n}")[0]).toContain("'fn' promises Int");
+  });
+});
+
+describe("checker: first-round deviations", () => {
+  it("inferred returns and match arms unify Null into T?", () => {
+    expect(errors("fn f(a: Int) {\nif a > 0 {\nreturn 1\n}\nreturn null\n}\nlet r: Int = f(1)")).toEqual(["7: Variable 'f(...)' may be null. Handle it first. Did you mean 'f(...) ?? \"default\"' or using 'if let'?"]);
+    expect(errors("let n = 1\nlet s = match n {\n0 -> null\n_ -> 1\n}\nlet t: Int = s")[0]).toContain("6: Variable 's' may be null");
+    clean("let n = 1\nlet s: Int? = match n {\n0 -> null\n_ -> 1\n}");
+  });
+  it("a binding arm before any null arm sees the nullable subject", () => {
+    expect(errors("let n: Int? = null\nlet s = match n {\nx -> x + 1\n}")[0]).toContain("Variable 'x' may be null");
+    clean("let n: Int? = null\nlet s = match n {\nnull -> 0\nx -> x + 1\n}");
+  });
+  it("lists only add to lists of the same element type", () => {
+    expect(errors('print([1] + ["a"])')).toEqual(["1: cannot apply '+' to List<Int> and List<String>. We won't guess."]);
+    clean("print([1] + [2])");
+  });
+  it("String + Int suggests converting the right operand, in order", () => {
+    expect(errors('let s = "a"\nprint(s + 1)')).toEqual(["2: cannot add Int and String. Did you mean: s + String(1)? BLESSED will wait. Take your time."]);
+  });
+  it("fix-its parenthesize nested binary operands", () => {
+    expect(errors('let e: String? = null\nprint((e ?? "") + 1)')).toEqual(['2: cannot add Int and String. Did you mean: (e ?? "") + String(1)? BLESSED will wait. Take your time.']);
+  });
+  it("unary minus only on numbers", () => {
+    expect(errors('print(-"a")')).toEqual(["1: cannot negate String. Only numbers have an opposite."]);
+  });
+  it("Float.round takes 0 or 1 arguments", () => {
+    expect(errors("print(1.5.round(1, 2))")).toEqual(["1: round takes 1 argument(s), got 2. Counting is the one thing we agreed on."]);
+    clean("print(1.5.round())\nprint(1.5.round(1))");
+  });
+  it("conversion arguments are checked", () => {
+    expect(errors("print(Int(true))")).toEqual(["1: Int() accepts Int, Float, String. Bool is not on the list."]);
+    expect(errors('print(Complex("1"))')).toEqual(["1: Complex() accepts Int, Float, Complex. String is not on the list."]);
+    expect(errors("print(Float([1]))")).toEqual(["1: Float() accepts Int, Float, String, Complex. List<Int> is not on the list."]);
+  });
+  it("String(x) accepts a nullable value", () => { clean("let n: Int? = null\nprint(String(n))"); });
+  it("duplicate parameter names", () => {
+    expect(errors("fn f(a: Int, a: Int) -> Int { a }")).toEqual(["1: 'a' is already declared in this scope. One name, one meaning."]);
+  });
+  it("map/filter/reduce callbacks are checked against the element type", () => {
+    expect(errors('fn d(x: Int) -> Int { x * 2 }\nprint(["a"].map(d))')).toEqual(["2: Expected Fn(String) -> Unknown but got Fn(Int) -> Int. Types are not suggestions."]);
+    expect(errors("print([1].filter(fn(x) { x + 1 }))")[0]).toContain("Expected Fn(Int) -> Bool but got Fn(Int) -> Int");
+    expect(errors('print([1].reduce(fn(a, x) { "s" }, 0))')[0]).toContain("Expected Fn(Int, Int) -> Int but got Fn(Int, Int) -> String");
+  });
+  it("nullable values in conditions, indexes, iterables, with, fields", () => {
+    expect(errors("let b: Bool? = null\nif b {\n}")[0]).toContain("Variable 'b' may be null");
+    expect(errors("let xs: List<Int>? = null\nprint(xs[0])")[0]).toContain("Variable 'xs' may be null");
+    expect(errors("let xs: List<Int>? = null\nloop x in xs {\n}")[0]).toContain("Variable 'xs' may be null");
+    expect(errors("record P { x: Int }\nlet p: P? = null\nlet q = p with { x: 1 }")[0]).toContain("Variable 'p' may be null");
+  });
+  it("assigning null to a non-nullable variable", () => {
+    expect(errors("let x: Int = 1\nx = null")).toEqual(["2: Variable 'x' of type 'Int' cannot be null. Declare it as 'Int?' to make it nullable."]);
+  });
+  it("a double-underscore name is still declared, so it does not cascade", () => {
+    expect(errors("let __x__ = 1\nprint(__x__)")).toEqual(["1: Double underscores on both sides are not a thing. This is Blessed, not Python."]);
+  });
+  it("camelCase rename handles digits and other binding forms", () => {
+    expect(warnings("let x_1 = 2")).toEqual(["1: Renamed variable 'x_1' to 'x1'. camelCase is the variable convention. You are welcome."]);
+    expect(warnings("loop my_item in [1] {\n}")[0]).toContain("Renamed variable 'my_item' to 'myItem'");
+    expect(warnings("let n: Int? = 1\nif let my_v = n {\n}")[0]).toContain("Renamed variable 'my_v' to 'myV'");
+  });
+  it("a semicolon on a tail expression is still flagged", () => {
+    expect(warnings("fn f() -> Int {\n1;\n}")).toEqual(["2: Formatter will remove this semicolon. Semicolons are optional. Don't think about it."]);
+  });
+});
