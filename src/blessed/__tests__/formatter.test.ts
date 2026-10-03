@@ -1,6 +1,7 @@
 // src/blessed/__tests__/formatter.test.ts
 import { describe, it, expect } from "vitest";
 import { formatSource } from "../formatter";
+import { parse } from "../parser";
 
 const fmt = (s: string) => formatSource(s).formatted;
 
@@ -106,6 +107,30 @@ print([1, 2][0..1], not true, -Infinity, (1 + 2) * 3, "s\${z.re}")`;
     expect(fmt("let a = (0..3).map(f)")).toBe("let a = (0..3).map(f)");
     expect(fmt("loop i in 0..3 {\nprint(i)\n}")).toBe("loop i in 0..3 {\n    print(i)\n}");
     expect(fmt("let a = xs[0..1]")).toBe("let a = xs[0..1]");
+  });
+  it("keeps innerComments in else-if and else blocks", () => {
+    const a = "if a {\n-- only\n} else if b {\n-- two\n} else {\n-- three\n}";
+    const once = fmt(a);
+    expect(once).toBe("if a {\n    -- only\n} else if b {\n    -- two\n} else {\n    -- three\n}");
+    expect(fmt(once)).toBe(once);
+  });
+  it("parenthesises unary operands in postfix contexts", () => {
+    for (const s of ["let a = (-1).abs()", "let a = (not b).c", "let a = (-x)[0]", "let a = -x * 2", "let a = x * -2"]) expect(fmt(s)).toBe(s);
+  });
+  it("threads indentation into nested lambdas", () => {
+    const s = "if true {\n    let y = xs.map(fn(z) {\n        let w = z\n        w\n    })\n}";
+    expect(fmt(s)).toBe(s);
+  });
+  it("parenthesises a range on the left of a range", () => {
+    expect(fmt("let r = (a..b)..c")).toBe("let r = (a..b)..c");
+  });
+  it("renames every declaration site and use consistently", () => {
+    const src = "let n = null\nif let user_name = n {\nprint(user_name)\n}\nloop my_item in xs {\nprint(my_item)\n}\nlet f = fn(a_b) {\nlet inner_var = a_b\ninner_var\n}\nlet g = match n {\nsome_x -> some_x\n}";
+    const r = formatSource(src);
+    expect(r.formatted).toBe("let n = null\nif let userName = n {\n    print(userName)\n}\nloop myItem in xs {\n    print(myItem)\n}\nlet f = fn(aB) {\n    let innerVar = aB\n    innerVar\n}\nlet g = match n {\n    someX -> someX\n}");
+    expect(r.logs.filter(l => l.startsWith("Formatter Warning")).length).toBe(5);
+    expect(parse(r.formatted).errors).toEqual([]);
+    expect(fmt(r.formatted)).toBe(r.formatted);
   });
   it("returns input unchanged with a log on parse error", () => {
     const r = formatSource("let = 1");

@@ -12,14 +12,15 @@ export function formatSource(code: string): { formatted: string; logs: string[] 
   const logs: string[] = [];
   const renames = new Map<string, string>();
   let semis = 0;
-  walkStmts(program.body, s => {
-    if (s.semicolon) semis++;
-    if (s.kind === "Let" && s.name.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(s.name) && !s.name.startsWith("_")) {
-      const to = s.name.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
-      renames.set(s.name, to); logs.push(`Formatter Warning: ${D.snakeCase(s.name, to)}`);
+  walkStmts(program.body, s => { if (s.semicolon) semis++; });
+  walkNames(program, n => {
+    if (n.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(n) && !n.startsWith("_") && !renames.has(n)) {
+      const to = n.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
+      renames.set(n, to); logs.push(`Formatter Warning: ${D.snakeCase(n, to)}`);
     }
-  });
-  if (renames.size) renameIdents(program, renames);
+    return n;
+  }, false);
+  if (renames.size) walkNames(program, n => renames.get(n) ?? n, true);
   if (semis) logs.push(`Formatter Notice: ${D.semicolonsVaporized(semis)}`);
   return { formatted: format(program), logs };
 }
@@ -57,36 +58,49 @@ function block(body: Stmt[], depth: number, open: string, s?: Stmt, close = "}")
 function stmt(s: Stmt, depth: number): string[] {
   const p = IND.repeat(depth);
   switch (s.kind) {
-    case "Let": return [`${p}let ${s.name}${s.type ? ": " + type(s.type) : ""} = ${expr(s.init)}`];
-    case "Assign": return [`${p}${expr(s.target)} = ${expr(s.value)}`];
+    case "Let": return [`${p}let ${s.name}${s.type ? ": " + type(s.type) : ""} = ${expr(s.init, depth)}`];
+    case "Assign": return [`${p}${expr(s.target, depth)} = ${expr(s.value, depth)}`];
     case "ExprStmt": return [p + expr(s.expr, depth)];
-    case "If": return ifChain(s, depth, `${p}if ${expr(s.cond)} {`);
-    case "IfLet": return ifChain(s, depth, `${p}if let ${s.name} = ${expr(s.expr)} {`);
+    case "If": return ifChain(s, depth, `${p}if ${expr(s.cond, depth)} {`);
+    case "IfLet": return ifChain(s, depth, `${p}if let ${s.name} = ${expr(s.expr, depth)} {`);
     case "Loop": {
-      const head = s.shape === "forever" ? "loop {" : s.shape === "while" ? `loop ${expr(s.cond!)} {`
-        : `loop ${s.item} in ${expr(s.iter!)}${s.despite ? " despite errors" + (s.despite.errName ? " as " + s.despite.errName : "") : ""} {`;
+      const head = s.shape === "forever" ? "loop {" : s.shape === "while" ? `loop ${expr(s.cond!, depth)} {`
+        : `loop ${s.item} in ${expr(s.iter!, depth)}${s.despite ? " despite errors" + (s.despite.errName ? " as " + s.despite.errName : "") : ""} {`;
       return block(s.body, depth, p + head, s);
     }
     case "FnDecl": return block(s.body, depth, `${p}fn ${s.name}(${params(s.params)})${s.ret ? " -> " + type(s.ret) : ""} {`, s);
     case "RecordDecl": return [`${p}record ${s.name} { ${s.fields.map(f => `${f.name}: ${type(f.type)}`).join(", ")} }`];
     case "Return": return [`${p}return${s.expr ? " " + expr(s.expr, depth) : ""}`];
-    case "Fail": return [`${p}fail ${expr(s.expr)}`];
+    case "Fail": return [`${p}fail ${expr(s.expr, depth)}`];
   }
+}
+
+// When both the then-block and a plain else-block are empty and there are 2+ comments, the split point is unknowable;
+// the first comment goes in the then-block and the rest in the else-block (stable under re-parse).
+function thenPart(n: Extract<Stmt, { kind: "If" | "IfLet" }>, depth: number, holder: { c?: string[] }): string[] {
+  const plainElse = n.else && !(n.else.length === 1 && (n.else[0].kind === "If" || n.else[0].kind === "IfLet") && n.else[0].leading.length === 0);
+  if (n.then.length === 0 && plainElse && n.else!.length === 0 && holder.c && holder.c.length >= 2) {
+    const [first, ...rest] = holder.c; holder.c = rest;
+    return [IND.repeat(depth + 1) + first];
+  }
+  return inner(n.then, depth + 1, holder);
 }
 
 function ifChain(s: Extract<Stmt, { kind: "If" | "IfLet" }>, depth: number, head: string): string[] {
   const p = IND.repeat(depth);
-  const holder = { c: s.innerComments };
-  const out = [head, ...inner(s.then, depth + 1, holder)];
+  const out = [head];
+  let holder = { c: s.innerComments };
+  out.push(...thenPart(s, depth, holder));
   let els = s.else;
   while (els) {
     if (els.length === 1 && (els[0].kind === "If" || els[0].kind === "IfLet") && els[0].leading.length === 0) {
       const n = els[0];
-      out.push(`${p}} else ${n.kind === "If" ? `if ${expr(n.cond)}` : `if let ${n.name} = ${expr(n.expr)}`} {`);
-      out.push(...inner(n.then, depth + 1, holder));
+      out.push(`${p}} else ${n.kind === "If" ? `if ${expr(n.cond, depth)}` : `if let ${n.name} = ${expr(n.expr, depth)}`} {`);
+      holder = { c: n.innerComments };
+      out.push(...thenPart(n, depth, holder));
       els = n.else; continue;
     }
-    out.push(`${p}} else {`, ...stmts(els, depth + 1)); break;
+    out.push(`${p}} else {`, ...inner(els, depth + 1, holder)); break;
   }
   out.push(`${p}}`);
   return out;
@@ -116,8 +130,11 @@ function expr(e: Expr, depth = 0, parentPrec = 0): string {
     case "Ident": return e.name;
     case "ListLit": return `[${e.items.map(x => expr(x, depth)).join(", ")}]`;
     case "MapLit": return `{${e.entries.map(en => `${expr(en.key)}: ${expr(en.value, depth)}`).join(", ")}}`;
-    case "Range": return paren(`${expr(e.start, depth, 6)}..${expr(e.end, depth, 7)}`, parentPrec > 6);
-    case "Unary": return `${e.op === "not" ? "not " : "-"}${expr(e.expr, depth, 9)}`;
+    case "Range": return paren(`${expr(e.start, depth, 7)}..${expr(e.end, depth, 7)}`, parentPrec > 6);
+    case "Unary": {
+      const dbl = e.op === "-" && e.expr.kind === "Unary" && e.expr.op === "-";
+      return paren(`${e.op === "not" ? "not " : "-"}${paren(expr(e.expr, depth, 9), dbl)}`, parentPrec > 9);
+    }
     case "Binary": {
       const prec = PREC[e.op];
       const s = `${expr(e.left, depth, prec)} ${e.op} ${expr(e.right, depth, prec + 1)}`;
@@ -136,11 +153,11 @@ function expr(e: Expr, depth = 0, parentPrec = 0): string {
     }
     case "Match": {
       const arms = e.arms.map(a => {
-        const head = `${IND.repeat(depth + 1)}${pattern(a.pattern)}${a.guard ? " if " + expr(a.guard) : ""} -> `;
+        const head = `${IND.repeat(depth + 1)}${pattern(a.pattern)}${a.guard ? " if " + expr(a.guard, depth + 1) : ""} -> `;
         if (a.body.length === 1 && a.body[0].kind === "ExprStmt" && a.body[0].leading.length === 0) return head + expr(a.body[0].expr, depth + 1);
         return [head + "{", ...stmts(a.body, depth + 2), `${IND.repeat(depth + 1)}}`].join("\n");
       });
-      return [`match ${expr(e.subject)} {`, ...arms, `${p}}`].join("\n");
+      return [`match ${expr(e.subject, depth)} {`, ...arms, `${p}}`].join("\n");
     }
     case "With": return `${expr(e.target, depth, 10)} with { ${e.fields.map(f => `${f.name}: ${expr(f.value, depth)}`).join(", ")} }`;
   }
@@ -170,8 +187,14 @@ function walkStmts(body: Stmt[], f: (s: Stmt) => void) {
   }
 }
 
-function renameIdents(p: Program, map: Map<string, string>) {
-  const rn = (n: string) => map.get(n) ?? n;
+// Visits every declaration-site name and every Ident use; f maps each name. When apply is true the result is written back.
+function walkNames(p: Program, f: (n: string) => string, apply: boolean) {
+  const rn = (n: string) => { const r = f(n); return apply ? r : n; };
+  const pat = (q: Pattern): void => {
+    if (q.kind === "PBind") q.name = rn(q.name);
+    else if (q.kind === "PRecord") q.fields.forEach(x => pat(x.pattern));
+  };
+  const prm = (ps: Param[]) => ps.forEach(x => { x.name = rn(x.name); });
   const ex = (e: Expr): void => {
     switch (e.kind) {
       case "Ident": e.name = rn(e.name); return;
@@ -184,9 +207,9 @@ function renameIdents(p: Program, map: Map<string, string>) {
       case "Call": ex(e.callee); e.args.forEach(ex); e.named.forEach(n => ex(n.value)); return;
       case "Index": ex(e.obj); ex(e.index); return;
       case "Field": ex(e.obj); return;
-      case "Lambda": st(e.body); return;
-      case "Match": ex(e.subject); e.arms.forEach(a => { if (a.guard) ex(a.guard); st(a.body); }); return;
-      case "With": ex(e.target); e.fields.forEach(f => ex(f.value)); return;
+      case "Lambda": prm(e.params); st(e.body); return;
+      case "Match": ex(e.subject); e.arms.forEach(a => { pat(a.pattern); if (a.guard) ex(a.guard); st(a.body); }); return;
+      case "With": ex(e.target); e.fields.forEach(x => ex(x.value)); return;
       default: return;
     }
   };
@@ -196,9 +219,13 @@ function renameIdents(p: Program, map: Map<string, string>) {
       case "Assign": ex(s.target); ex(s.value); return;
       case "ExprStmt": ex(s.expr); return;
       case "If": ex(s.cond); st(s.then); if (s.else) st(s.else); return;
-      case "IfLet": ex(s.expr); st(s.then); if (s.else) st(s.else); return;
-      case "Loop": if (s.cond) ex(s.cond); if (s.iter) ex(s.iter); st(s.body); return;
-      case "FnDecl": st(s.body); return;
+      case "IfLet": s.name = rn(s.name); ex(s.expr); st(s.then); if (s.else) st(s.else); return;
+      case "Loop":
+        if (s.cond) ex(s.cond); if (s.iter) ex(s.iter);
+        if (s.item) s.item = rn(s.item);
+        if (s.despite?.errName) s.despite.errName = rn(s.despite.errName);
+        st(s.body); return;
+      case "FnDecl": prm(s.params); st(s.body); return;
       case "Return": if (s.expr) ex(s.expr); return;
       case "Fail": ex(s.expr); return;
       default: return;
