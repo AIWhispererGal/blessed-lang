@@ -38,11 +38,12 @@ export const bool = (v: boolean): Value => (v ? TRUE : FALSE);
 export const complex = (re: number, im: number): Value => ({ t: "Complex", re, im });
 export const list = (items: Value[]): Value => ({ t: "List", items });
 
-export function checkFloat(v: number, exprText: string): number {
-  if (Number.isNaN(v)) throw new BlessedError(D.notANumber(exprText));
+/** `exprText` may be a thunk, so hot paths only build the message when the check fails. */
+export function checkFloat(v: number, exprText: string | (() => string)): number {
+  if (Number.isNaN(v)) throw new BlessedError(D.notANumber(typeof exprText === "function" ? exprText() : exprText));
   return v;
 }
-export function makeComplex(re: number, im: number, exprText: string): Value {
+export function makeComplex(re: number, im: number, exprText: string | (() => string)): Value {
   return complex(checkFloat(re, exprText), checkFloat(im, exprText));
 }
 

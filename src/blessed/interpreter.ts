@@ -280,7 +280,7 @@ export class Interpreter {
     if (op === "is") return bool(identical(a, b));
     const bad = () => new BlessedError(D.runtimeType(op, typeName(a), typeName(b)));
     if (a.t !== b.t) throw bad();
-    const text = `${show(a)} ${op} ${show(b)}`;
+    const text = () => `${show(a)} ${op} ${show(b)}`;     // built only when a result is not a number
     switch (a.t) {
       case "Int": {
         const x = a.v, y = (b as any).v as bigint;

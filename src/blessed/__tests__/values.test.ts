@@ -79,3 +79,14 @@ describe("values", () => {
     expect(plainDecimal(4)).toBe("4");
   });
 });
+
+describe("lazy arithmetic error text", () => {
+  it("checkFloat only builds the message when the value is NaN", () => {
+    let built = 0;
+    const text = () => { built++; return "x / y"; };
+    expect(checkFloat(1.5, text)).toBe(1.5);
+    expect(built).toBe(0);
+    expect(() => checkFloat(NaN, text)).toThrow("x / y is not a number");
+    expect(built).toBe(1);
+  });
+});

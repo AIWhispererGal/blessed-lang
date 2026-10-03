@@ -447,13 +447,8 @@ export default function App() {
                     {terminalOutput.length > 0 && (
                       <div className="space-y-1 bg-stone-900/80 p-3 rounded-lg border border-stone-800 flex-1 overflow-y-auto">
                         {terminalOutput.map((log, idx) => (
-                          <div 
-                            key={idx} 
-                            className={`py-0.5 leading-relaxed text-xs ${
-                              log.startsWith("[LOOP ERROR") ? "text-amber-500 italic bg-amber-500/10 px-2 py-1 rounded" : "text-stone-300"
-                            }`}
-                          >
-                            {log.startsWith("[LOOP ERROR") ? "⚠️ " + log : "• " + log}
+                          <div key={idx} className="py-0.5 leading-relaxed text-xs text-stone-300">
+                            {"• " + log}
                           </div>
                         ))}
                       </div>
