@@ -19,7 +19,11 @@ describe("stdlib", () => {
       .toEqual(["3", "[3, 1, 2, 4]", "[3, 1, 2]", "[6, 2, 4]", "[3, 2]", "6", "true", "[2, 1, 3]", "[1, 2, 3]", '["a", "b"]', "a-b"]);
   });
   it("numeric aggregates", () => {
-    expect(out("print([1, 2, 3].sum())\nprint([1.5, 2.5].sum())\nprint([3, 1].min() ?? -1)\nprint([3, 1].max() ?? -1)\nlet e: List<Int> = []\nprint(e.min() ?? -1)\nprint(e.sum())")).toEqual(["6", "4.0", "1", "3", "-1", "0"]);
+    expect(out("print([1, 2, 3].sum())\nprint([1.5, 2.5].sum())\nprint([3, 1].min() ?? -1)\nprint([3, 1].max() ?? -1)\nlet e: List<Int> = []\nprint(e.min() ?? -1)")).toEqual(["6", "4.0", "1", "3", "-1"]);
+  });
+  it("sum() of an empty list is a catchable runtime error", () => {
+    expect(fails("let e: List<Float> = []\nprint(e.sum())")).toContain("sum() of nothing is a philosophical question");
+    expect(out('let e: List<Int> = []\nloop x in [1] despite errors as err {\n    print(e.sum())\n}\nprint(err ?? "none")')).toEqual(["sum() of nothing is a philosophical question, not a number. Check length first."]);
   });
   it("Map methods", () => {
     expect(out('let m = {"a": 1, "b": 2}\nprint(m.keys())\nprint(m.values())\nprint(m.has("a"))\nprint(m.has("z"))')).toEqual(['["a", "b"]', "[1, 2]", "true", "false"]);

@@ -264,4 +264,29 @@ describe("checker: hoisting and variadic print", () => {
   it("fns and records may be used before their declaration", () => {
     clean("print(f(1))\nfn f(n: Int) -> Int {\nreturn g(n)\n}\nfn g(n: Int) -> Int {\nreturn n\n}\nlet p = P(a: 1)\nrecord P { a: Int }");
   });
+  it("a hoisted fn may not read a let declared after the first statement that can run it", () => {
+    expect(errors("print(f())\nlet x = 1\nfn f() -> Int {\nreturn x\n}")).toEqual(["4: 'x' is not defined. BLESSED checked everywhere. Twice."]);
+    expect(errors("print(g())\nlet x = 1\nfn g() -> Int {\nreturn f()\n}\nfn f() -> Int {\nreturn x\n}")[0]).toContain("'x' is not defined");
+    expect(errors("let y = f()\nfn f() -> Int {\nreturn y\n}")[0]).toContain("'y' is not defined");
+    clean("let x = 1\nprint(f())\nfn f() -> Int {\nreturn x\n}");
+    clean("let x = 1\nfn f() -> Int {\nreturn x\n}\nprint(f())");
+    clean("print(f(3))\nfn f(n: Int) -> Int {\nreturn g(n)\n}\nfn g(n: Int) -> Int {\nif n > 0 {\nreturn f(n - 1)\n}\nreturn 0\n}");
+  });
+});
+
+describe("checker: final-review soundness fixes", () => {
+  it("?? with a nullable fallback stays nullable; chains type-check", () => {
+    clean("let a: Int? = null\nlet b: Int? = null\nprint(a ?? b ?? 3)");
+    expect(errors("let a: Int? = null\nlet b: Int? = null\nlet c: Int = a ?? b")[0]).toContain("may be null");
+    clean("let a: Int? = null\nlet c: Int = a ?? 1");
+  });
+  it("an inferred return type includes null when the body can fall off the end", () => {
+    expect(errors("fn f(x: Int) {\nif x > 0 {\nreturn 1\n}\n}\nprint(f(-1) + 1)")[0]).toContain("may be null");
+    clean("fn f(x: Int) {\nif x > 0 {\nreturn 1\n}\nreturn 2\n}\nprint(f(-1) + 1)");
+    clean("fn f(x: Int) {\nx + 1\n}\nprint(f(1) + 1)");
+  });
+  it("a bare record name is not a value", () => {
+    expect(errors("record Point { x: Int }\nlet p = Point")).toEqual(["2: Point is a record type, not a value. Did you mean Point(...)?"]);
+    clean("record Point { x: Int }\nlet p = Point(x: 1)");
+  });
 });

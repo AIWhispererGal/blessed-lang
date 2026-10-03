@@ -56,6 +56,7 @@ export const D = {
   emptyMapNeedsType: () => `'{}' has no way of knowing what it holds. Annotate it: let m: Map<String, Int> = {}`,
   rangeEndsInt: () => `Range ends must be Int. 0.5..1.5 is not a sequence of anything.`,
   negativeIntPow: () => `Int.pow() with a negative exponent is a fraction. Use Float.`,
+  recordAsValue: (name: string) => `${name} is a record type, not a value. Did you mean ${name}(...)?`,
   cannotInfer: (n: string) => `Cannot infer the type of parameter '${n}'. Annotate it.`,
   doubleUnderscore: () => `Double underscores on both sides are not a thing. This is Blessed, not Python.`,
   leadingUnderscore: () => `Leading underscores are reserved for the compiler's internal use. Please stick to camelCase.`,
@@ -73,6 +74,7 @@ export const D = {
   runtimeUnary: (op: string, t: string) => `cannot apply '${op}' to ${t} at runtime. The type was only knowable now, and now we know.`,
   notBoolRuntime: (t: string) => `Condition is ${t}, not Bool. BLESSED is not interested in truthy/falsy load-bearing conventions that were always wrong. Please make it explicit.`,
   intFromInfinity: () => `Int(Infinity) is not a count. There is no infinite count.`,
+  emptySum: () => `sum() of nothing is a philosophical question, not a number. Check length first.`,
   floatFromComplex: () => `Float(z) only works when z.im == 0.0. Did you mean z.re?`,
   // formatter
   semicolonsVaporized: (n: number) => `Semicolon detected and vaporized ${n} time(s). Semicolons are optional and the formatter removes them. Suffer no more.`,

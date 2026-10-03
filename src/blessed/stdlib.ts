@@ -104,7 +104,7 @@ export function callMethod(interp: Interpreter, v: Value, name: string, args: Va
         case "reverse": return list([...xs].reverse());
         case "sort": return list([...xs].sort((a, b) => compare(a, b, "sort")));
         case "sum": {
-          if (xs.length === 0) return int(0);
+          if (xs.length === 0) throw new BlessedError(D.emptySum());
           if (xs[0].t === "Float") return float(checkFloat(xs.reduce((a, x) => a + argOf([x], 0, "Float", name).v, 0), "sum()"));
           return int(xs.reduce((a, x) => a + argOf([x], 0, "Int", name).v, 0n));
         }

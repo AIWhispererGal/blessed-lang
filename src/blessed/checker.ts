@@ -84,15 +84,50 @@ function terminates(stmts: Stmt[], top = false): boolean {
   }
 }
 
-interface Binding { type: Type; isConst: boolean }
+/** `at`: index of the declaring statement in its block, for `let`-like bindings (see Checker.fnView). */
+interface Binding { type: Type; isConst: boolean; at?: number }
 class Scope {
   vars = new Map<string, Binding>();
+  /** For each hoisted fn of this scope's block: the index of the first statement that can run it. */
+  fnFirstRun?: Map<string, number>;
+  /** Index of the statement being checked in this scope's block. */
+  at = 0;
   constructor(public parent?: Scope, public fnRet?: { declared?: Type; inferred: Type[] }) {}
   lookup(n: string): Binding | undefined { return this.vars.get(n) ?? this.parent?.lookup(n); }
   fn(): Scope | undefined { return this.fnRet ? this : this.parent?.fn(); }
 }
 
 const isConstName = (n: string) => /^[A-Z][A-Z0-9_]*$/.test(n) && n.length > 1;
+
+/** Every identifier mentioned anywhere inside an AST node (nested functions included). */
+function mentions(node: unknown, out = new Set<string>()): Set<string> {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) { for (const n of node) mentions(n, out); return out; }
+  const n = node as { kind?: string; name?: string };
+  if (n.kind === "Ident") out.add(n.name!);
+  for (const v of Object.values(node)) if (v && typeof v === "object") mentions(v, out);
+  return out;
+}
+
+/** For each fn declared in a block: the index of the first statement that can run it. That is its own declaration, or an earlier
+ *  statement that mentions it, directly or through another hoisted fn it runs first. Its body may only read the block's `let`s
+ *  declared above that point; anything later would not exist yet when it runs. */
+function firstRuns(stmts: Stmt[]): Map<string, number> {
+  const first = new Map<string, number>(); const bodies = new Map<string, Set<string>>();
+  stmts.forEach((s, i) => { if (s.kind === "FnDecl" && !first.has(s.name)) { first.set(s.name, i); bodies.set(s.name, mentions(s.body)); } });
+  if (!first.size) return first;
+  stmts.forEach((s, i) => {
+    if (s.kind === "FnDecl") return;
+    for (const n of mentions(s)) if (first.has(n) && i < first.get(n)!) first.set(n, i);
+  });
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [f, names] of bodies) for (const n of names) {
+      if (first.has(n) && first.get(f)! < first.get(n)!) { first.set(n, first.get(f)!); changed = true; }
+    }
+  }
+  return first;
+}
 
 export function check(program: Program): Diagnostic[] {
   const c = new Checker();
@@ -144,7 +179,18 @@ class Checker {
     const declared = stmts.filter((s): s is Extract<Stmt, { kind: "RecordDecl" }> => s.kind === "RecordDecl" && this.declareRecord(s));   // records are visible before use
     for (const s of declared) this.resolveRecordFields(s);                              // field types too, so earlier code can construct and read them
     for (const s of stmts) if (s.kind === "FnDecl") this.declareFn(s, scope);          // functions can be mutually recursive
-    for (const s of stmts) this.stmt(s, scope);
+    scope.fnFirstRun = firstRuns(stmts);
+    stmts.forEach((s, i) => { scope.at = i; this.stmt(s, scope); });
+  }
+
+  /** The scope a hoisted fn body sees: its block's `let`s only when declared before the first statement that can run the fn. */
+  fnView(scope: Scope, name: string): Scope {
+    const cut = scope.fnFirstRun?.get(name);
+    if (cut === undefined) return scope;
+    const view = new Scope(scope.parent, scope.fnRet);
+    for (const [k, b] of scope.vars) if (b.at === undefined || b.at < cut) view.vars.set(k, b);
+    view.fnFirstRun = scope.fnFirstRun;
+    return view;
   }
 
   declareRecord(s: Extract<Stmt, { kind: "RecordDecl" }>): boolean {
@@ -183,7 +229,7 @@ class Checker {
           else this.expect(s.span.line, declared, actual, s.init);
         } else if (actual.k === "List" && actual.el.k === "Unknown") type = actual;
         if (!declared && s.init.kind === "MapLit" && s.init.entries.length === 0) this.err(s.span.line, D.emptyMapNeedsType());
-        scope.vars.set(s.name, { type, isConst: isConstName(s.name) });
+        scope.vars.set(s.name, { type, isConst: isConstName(s.name), at: scope.at });
         return;
       }
       case "Assign": {
@@ -241,7 +287,7 @@ class Checker {
           if (s.despite?.errName) {
             this.checkName(s.span.line, s.despite.errName);
             if (scope.vars.has(s.despite.errName)) this.err(s.span.line, D.redeclared(s.despite.errName));
-            scope.vars.set(s.despite.errName, { type: T.nullable(T.String), isConst: false });   // String?, visible in the body and after the loop
+            scope.vars.set(s.despite.errName, { type: T.nullable(T.String), isConst: false, at: scope.at });   // String?, visible in the body and after the loop
           }
         }
         this.block(s.body, inner);
@@ -249,7 +295,7 @@ class Checker {
       }
       case "FnDecl": {
         const b = scope.vars.get(s.name); if (!b || b.type.k !== "Fn") return;
-        const ret = this.fnBody(s.params, b.type.params, s.ret ? b.type.ret : undefined, s.body, scope, s.span.line, s.name);
+        const ret = this.fnBody(s.params, b.type.params, s.ret ? b.type.ret : undefined, s.body, this.fnView(scope, s.name), s.span.line, s.name);
         if (!s.ret) b.type = T.fn(b.type.params, ret);
         return;
       }
@@ -287,6 +333,7 @@ class Checker {
       return declaredRet;
     }
     const inferred = scope.fnRet!.inferred;
+    if (!terminates(body, true)) inferred.push(T.Null);     // falling off the end returns null
     if (inferred.length === 0) return T.Null;
     let ret = inferred[0];
     for (const t of inferred.slice(1)) {
@@ -355,7 +402,7 @@ class Checker {
       case "StrLit": for (const p of e.parts) if (typeof p !== "string") this.exprNonNull(p, scope); return T.String;
       case "Ident": {
         const b = scope.lookup(e.name);
-        if (!b) { if (this.records.has(e.name)) return T.Unknown; return this.err(e.span.line, D.undefinedName(e.name)); }
+        if (!b) return this.err(e.span.line, this.records.has(e.name) ? D.recordAsValue(e.name) : D.undefinedName(e.name));
         return b.type;
       }
       case "ListLit": {
@@ -447,9 +494,9 @@ class Checker {
       const inner = l.k === "Nullable" ? l.inner : l;
       const r = this.expr(e.right, scope, inner);
       if (l.k !== "Nullable" && l.k !== "Unknown" && l.k !== "Null") this.err(line, D.typeMismatch("a nullable value", showType(l)));
-      if (l.k === "Null") return r.k === "Nullable" ? r.inner : r;
+      if (l.k === "Null") return r;
       this.expect(line, inner, r.k === "Nullable" ? r.inner : r, e.right);
-      return inner;
+      return r.k === "Nullable" || r.k === "Null" ? T.nullable(inner) : inner;     // a nullable fallback keeps the result nullable
     }
     if (e.op === "and" || e.op === "or") { this.condition(e.left, scope); this.condition(e.right, scope); return T.Bool; }
     if (e.op === "==" || e.op === "!=") {
