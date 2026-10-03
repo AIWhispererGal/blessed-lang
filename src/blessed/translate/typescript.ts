@@ -345,7 +345,8 @@ class Ts {
         if (pt.value.kind === "ComplexLit") { this.uses.add("blessedEq"); return `blessedEq(${s}, ${v})`; }
         return `${s} === ${v}`;
       }
-      case "PRecord": return pt.fields.map(f => this.patternCond(f.pattern, `${s}.${f.name}`)).filter(c => c !== "true").join(" && ") || "true";
+      // the subject may be `T | null`: test it before reading any field, even when every field is a binding
+      case "PRecord": return [`${s} !== null`, ...pt.fields.map(f => this.patternCond(f.pattern, `${s}.${f.name}`)).filter(c => c !== "true")].join(" && ");
     }
   }
   patternBinds(pt: Pattern, s: string): string[] {

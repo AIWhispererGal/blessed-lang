@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EXAMPLES } from "../examples";
-import { translateBlessedToPython, translateBlessedToTypeScript } from "../index";
+import { executeBlessed, translateBlessedToPython, translateBlessedToTypeScript } from "../index";
 
 const has = (cmd: string) => { try { execSync(`${cmd} --version`, { stdio: "ignore" }); return true; } catch { return false; } };
 const hasPython = has("python3");
@@ -38,4 +38,31 @@ describe.skipIf(!hasPython)("emitted Python runs", () => {
       expect(py.status).toBe(0);
     }, TIMEOUT);
   }
+});
+
+describe("emitted TypeScript: record pattern on a nullable subject", () => {
+  const src = `record Point { x: Int, y: Int }
+fn find(n: Int) -> Point? {
+    if n > 0 {
+        return Point(x: n, y: 2)
+    }
+    return null
+}
+loop n in [1, 0] {
+    print(match find(n) {
+        Point(x: x, y: y) -> "point \${x} \${y}"
+        null -> "nothing"
+        _ -> "other"
+    })
+}`;
+  it("type-checks under --strict and prints what the interpreter prints", () => {
+    const file = join(dir, "nullableRecordMatch.ts");
+    writeFileSync(file, translateBlessedToTypeScript(src));
+    const tsc = spawnSync(bin("tsc"), ["--noEmit", "--strict", "--target", "es2020", "--lib", "es2020,dom", file], { encoding: "utf8", cwd: dir });
+    expect(tsc.stdout + tsc.stderr).toBe("");
+    const node = spawnSync(bin("tsx"), [file], { encoding: "utf8", cwd: dir });
+    expect(node.stderr).toBe("");
+    expect(node.stdout.trimEnd().split("\n")).toEqual(executeBlessed(src).stdout);
+    expect(executeBlessed(src).stdout).toEqual(["point 1 2", "nothing"]);
+  }, TIMEOUT);
 });
