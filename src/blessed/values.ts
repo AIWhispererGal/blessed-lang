@@ -86,7 +86,7 @@ export function identical(a: Value, b: Value): boolean { return a === b; }
 export function showFloat(n: number): string {
   if (n === Infinity) return "Infinity";
   if (n === -Infinity) return "-Infinity";
-  const r = Number(n.toPrecision(12));
+  const r = Number(n.toPrecision(15));
   return Number.isInteger(r) ? r.toFixed(1) : String(r);
 }
 
@@ -95,7 +95,7 @@ export function show(v: Value): string {
     case "Int": return v.v.toString();
     case "Float": return showFloat(v.v);
     case "Complex": {
-      const r = (n: number) => Math.abs(n) < 1e-12 ? 0 : Number(n.toPrecision(12));
+      const r = (n: number) => Math.abs(n) < 1e-12 ? 0 : Number(n.toPrecision(15));
       const re = r(v.re), im = r(v.im);
       const plain = (n: number) => String(Math.abs(n));
       if (re === 0) return `${im < 0 ? "-" : ""}${plain(im)}i`;

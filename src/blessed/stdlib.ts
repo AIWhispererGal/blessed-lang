@@ -62,11 +62,11 @@ function argOf(args: Value[], i: number, t: Value["t"], _name: string): any {
   if (!a || a.t !== t) throw new BlessedError(D.typeMismatch(t, a ? typeName(a) : "nothing"));
   return a;
 }
-function compare(a: Value, b: Value): number {
+function compare(a: Value, b: Value, op: string): number {
   if (a.t === "Int" && b.t === "Int") return a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
   if (a.t === "Float" && b.t === "Float") return a.v - b.v;
   if (a.t === "String" && b.t === "String") return a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
-  throw new BlessedError(D.cannotOperate("sort", typeName(a), typeName(b)));
+  throw new BlessedError(D.cannotOperate(op, typeName(a), typeName(b)));
 }
 
 export function callMethod(interp: Interpreter, v: Value, name: string, args: Value[], line: number): Value {
@@ -102,7 +102,7 @@ export function callMethod(interp: Interpreter, v: Value, name: string, args: Va
         case "join": return str(xs.map(x => show(x)).join(argOf(args, 0, "String", name).v));
         case "contains": return bool(xs.some(x => equals(x, args[0])));
         case "reverse": return list([...xs].reverse());
-        case "sort": return list([...xs].sort(compare));
+        case "sort": return list([...xs].sort((a, b) => compare(a, b, "sort")));
         case "sum": {
           if (xs.length === 0) return int(0);
           if (xs[0].t === "Float") return float(checkFloat(xs.reduce((a, x) => a + argOf([x], 0, "Float", name).v, 0), "sum()"));
@@ -110,7 +110,7 @@ export function callMethod(interp: Interpreter, v: Value, name: string, args: Va
         }
         case "min": case "max": {
           if (xs.length === 0) return NULL;
-          return xs.reduce((best, x) => (name === "min" ? compare(x, best) < 0 : compare(x, best) > 0) ? x : best);
+          return xs.reduce((best, x) => (name === "min" ? compare(x, best, name) < 0 : compare(x, best, name) > 0) ? x : best);
         }
       }
       break;
@@ -139,7 +139,7 @@ export function callMethod(interp: Interpreter, v: Value, name: string, args: Va
         case "abs": return float(Math.abs(x));
         case "floor": return float(Math.floor(x));
         case "ceil": return float(Math.ceil(x));
-        case "round": { if (args.length === 0) return float(Math.round(x)); const d = Number(argOf(args, 0, "Int", name).v); const m = 10 ** d; return float(Math.round(x * m) / m); }
+        case "round": { if (args.length === 0) return float(Math.round(x)); const d = Number(argOf(args, 0, "Int", name).v); const m = 10 ** d; return float(checkFloat(Math.round(x * m) / m, t)); }
         case "sqrt": return f1(Math.sqrt, x, t);
         case "pow": { const e = args[0]; const ev = e.t === "Int" ? Number(e.v) : e.t === "Float" ? e.v : (() => { throw new BlessedError(D.typeMismatch("Float", typeName(e))); })(); return float(checkFloat(x ** ev, t)); }
         case "sin": return f1(Math.sin, x, t); case "cos": return f1(Math.cos, x, t); case "tan": return f1(Math.tan, x, t);

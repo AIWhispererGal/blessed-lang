@@ -46,4 +46,11 @@ describe("stdlib", () => {
   it("wrong arity", () => {
     expect(fails('print("a".split())')).toContain("takes 1 argument(s), got 0");
   });
+  it("Float.round with huge digits fails", () => {
+    expect(fails("print(2.5.round(400))")).toContain("is not a number");
+  });
+  it("min/max name their own op", () => {
+    expect(fails("print([1, 2.5].min())")).toContain("cannot apply 'min'");
+    expect(fails("print([1, 2.5].max())")).toContain("cannot apply 'max'");
+  });
 });

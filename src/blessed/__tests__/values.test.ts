@@ -62,4 +62,8 @@ describe("values", () => {
     expect(typeName(list([]))).toBe("List");
     expect(typeName(int(1))).toBe("Int");
   });
+  it("show keeps 15 significant digits", () => {
+    expect(show(float(1234567890123.5))).toBe("1234567890123.5");
+    expect(show(float(0.1 + 0.2))).toBe("0.3");
+  });
 });
