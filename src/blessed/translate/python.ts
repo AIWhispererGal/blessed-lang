@@ -426,10 +426,11 @@ class Py {
         case "startsWith": return `${post()}.startswith(${arg(0)})`; case "endsWith": return `${post()}.endswith(${arg(0)})`;
         case "replace": return `${post()}.replace(${arg(0)}, ${arg(1)})`;
         case "push": return `(${this.expr(objE, 7)} + [${arg(0)}])`;
-        case "map": { const o = plain(), f = this.expr(e.args[0]); return o.includes(":=") ? `list(map(${f}, ${o}))` : `[(${f})(_x) for _x in ${o}]`; }
-        case "filter": { const o = plain(), f = this.expr(e.args[0]); return o.includes(":=") ? `list(filter(${f}, ${o}))` : `[_x for _x in ${o} if (${f})(_x)]`; }
+        // no comprehensions: a walrus from `??` in a comprehension's iterable is a SyntaxError
+        case "map": { const o = plain(); return `list(map(${this.expr(e.args[0])}, ${o}))`; }
+        case "filter": { const o = plain(); return `list(filter(${this.expr(e.args[0])}, ${o}))`; }
         case "reduce": { this.uses.add("functools"); const o = plain(); return `functools.reduce(${arg(0)}, ${o}, ${arg(1)})`; }
-        case "join": { const o = plain(); return `${this.expr(e.args[0], POSTFIX)}.join(str(_x) for _x in ${o})`; }
+        case "join": { const o = plain(); return `${this.expr(e.args[0], POSTFIX)}.join(map(str, ${o}))`; }
         case "reverse": return `list(reversed(${plain()}))`; case "sort": return `sorted(${plain()})`;
         case "sum": return `sum(${plain()})`;
         case "min": return `min(${plain()}, default=None)`; case "max": return `max(${plain()}, default=None)`;

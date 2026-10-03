@@ -31,7 +31,7 @@ describe("python emitter", () => {
   });
   it("ranges, slices, negative index, complex, infinity, lists and maps, methods", () => {
     expect(py('let xs = [3, 1, 2]\nprint(xs[-1], xs[0..2], 0..3)\nlet m = {"a": 1}\nprint(m["a"] ?? 0, m.has("a"), xs.length, xs.sort(), xs.map(fn(x) { x * 2 }), "a,b".split(","), 2.pow(10), 3 + 4i, Infinity, (2.0).sqrt())')).toBe(
-      'import math\n\nxs = [3, 1, 2]\nprint(xs[-1], xs[0:2], list(range(0, 3)))\nm = {"a": 1}\nprint((m.get("a") if m.get("a") is not None else 0), ("a" in m), len(xs), sorted(xs), [(lambda x: x * 2)(_x) for _x in xs], "a,b".split(","), 2 ** 10, complex(3, 4), math.inf, math.sqrt(2.0))');
+      'import math\n\nxs = [3, 1, 2]\nprint(xs[-1], xs[0:2], list(range(0, 3)))\nm = {"a": 1}\nprint((m.get("a") if m.get("a") is not None else 0), ("a" in m), len(xs), sorted(xs), list(map(lambda x: x * 2, xs)), "a,b".split(","), 2 ** 10, complex(3, 4), math.inf, math.sqrt(2.0))');
   });
 
   // ---- checker-typed decisions
@@ -47,6 +47,10 @@ describe("python emitter", () => {
   it("Int(String) and Float(String) return null on bad input; ?? on a call evaluates it once", () => {
     expect(py('let s = "42"\nprint(Int(s) ?? 0)\nprint(Int(4.7))')).toBe(
       'import re\n\ndef _bint(s):\n    s = s.strip()\n    return int(s) if re.fullmatch(r"-?[0-9]+", s) else None\n\ns = "42"\nprint((_n1 if (_n1 := _bint(s)) is not None else 0))\nprint(int(4.7))');
+  });
+  it("join, map and filter over a ?? with a call stay valid Python (no walrus in a comprehension iterable)", () => {
+    expect(py('fn g() -> List<Int>? {\n    return null\n}\nprint((g() ?? [2]).join(","))\nprint((g() ?? [3]).map(fn(x) { x + 1 }).filter(fn(x) { x > 1 }))')).toBe(
+      'from typing import Optional\n\ndef g() -> Optional[list[int]]:\n    return None\n\nprint(",".join(map(str, (_n1 if (_n1 := g()) is not None else [2]))))\nprint(list(filter(lambda x: x > 1, list(map(lambda x: x + 1, (_n2 if (_n2 := g()) is not None else [3]))))))');
   });
   it("Complex methods use cmath", () => {
     expect(py("print((3 + 4i).sqrt())")).toBe("import cmath\n\nprint(cmath.sqrt(complex(3, 4)))");
