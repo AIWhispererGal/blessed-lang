@@ -109,3 +109,54 @@ describe("interpreter core", () => {
     expect(out('fn f(n: Int) -> Int {\nreturn f(n + 1)\n}\nfn g(n: Int) -> Int {\nif n == 0 {\nreturn 0\n}\nreturn 1 + g(n - 1)\n}\nloop x in [1] despite errors {\nf(0)\n}\nprint(g(400))')).toEqual(["400"]);
   });
 });
+
+describe("interpreter data types", () => {
+  it("list index, negative index, slices clamp, out of range fails", () => {
+    expect(out('let xs = ["a", "b", "c"]\nprint(xs[0])\nprint(xs[-1])\nprint(xs[0..2])\nprint(xs[1..99])\nprint(xs[2..1])')).toEqual(["a", "c", '["a", "b"]', '["b", "c"]', "[]"]);
+    expect(fails("let xs = [1, 2, 3]\nprint(xs[3])")).toContain("Index 3 is out of range for a list of length 3");
+  });
+  it("negative index out of range", () => {
+    expect(fails("let xs = [1, 2, 3]\nprint(xs[-4])")).toContain("Index -4 is out of range");
+  });
+  it("slice clamps", () => {
+    expect(out("let xs = [1, 2, 3]\nprint(xs[-99..2])")).toEqual(["[1, 2]"]);
+  });
+  it("list element assignment and concatenation", () => {
+    expect(out("let xs = [1, 2]\nxs[0] = 9\nprint(xs)\nprint(xs + [3])")).toEqual(["[9, 2]", "[9, 2, 3]"]);
+  });
+  it("string indexing and slicing", () => {
+    expect(out('let s = "hello"\nprint(s[0])\nprint(s[-1])\nprint(s[1..3])')).toEqual(["h", "o", "el"]);
+  });
+  it("maps: literal, lookup, missing is null, set, Int vs String keys", () => {
+    expect(out('let m = {"al": 30, "bo": 25}\nprint(m["al"])\nprint(m["cy"] ?? -1)\nm["cy"] = 40\nprint(m)')).toEqual(["30", "-1", '{"al": 30, "bo": 25, "cy": 40}']);
+    expect(out('let m = {1: "one"}\nprint(m[1])\nprint(m)')).toEqual(["one", '{1: "one"}']);
+  });
+  it("records: construct, field, structural equality, immutability, with", () => {
+    const src = "record Point { x: Int, y: Int }\nlet p = Point(y: 2, x: 1)\nprint(p)\nprint(p.x)\nprint(p == Point(x: 1, y: 2))\nprint(p is Point(x: 1, y: 2))\nlet q = p with { x: 3 }\nprint(q)\nprint(p)";
+    expect(out(src)).toEqual(["Point(x: 1, y: 2)", "1", "true", "false", "Point(x: 3, y: 2)", "Point(x: 1, y: 2)"]);
+    expect(fails("record P { x: Int }\nlet p = P(x: 1)\np.x = 2")).toContain("records do not change");
+    expect(fails("record P { x: Int, y: Int }\nlet p = P(x: 1)")).toContain("missing 'y'");
+    expect(fails("record P { x: Int }\nlet p = P(x: 1, z: 2)")).toContain("no field 'z'");
+    expect(fails("record P { x: Int }\nlet p = P(x: 1)\nprint(p.z)")).toContain("no field 'z'");
+  });
+  it("records hold functions and nested records", () => {
+    expect(out("record Dog { name: String, speak: Fn(String) -> String }\nlet d = Dog(name: \"Rex\", speak: fn(n: String) { \"${n} says woof\" })\nprint(d.speak(d.name))")).toEqual(["Rex says woof"]);
+  });
+  it("match: literal, binding, guard, record destructuring, wildcard, block body, as expression", () => {
+    const src = 'record Point { x: Int, y: Int }\nfn label(v: Int) -> String {\nreturn match v {\n0 -> "zero"\nn if n > 10 -> "big ${n}"\n_ -> "other"\n}\n}\nprint(label(0))\nprint(label(11))\nprint(label(5))\nlet p = Point(x: 0, y: 7)\nprint(match p {\nPoint(x: 0, y: y) -> "axis ${y}"\n_ -> "off"\n})\nlet r = match true {\ntrue -> {\nlet t = "yes"\nt + "!"\n}\nfalse -> "no"\n}\nprint(r)';
+    expect(out(src)).toEqual(["zero", "big 11", "other", "axis 7", "yes!"]);
+  });
+  it("match on String, negative Int literal, and null", () => {
+    expect(out('print(match "b" {\n"a" -> 1\n"b" -> 2\n_ -> 0\n})\nprint(match -1 {\n-1 -> "neg"\n_ -> "pos"\n})\nlet n: Int? = null\nprint(match n {\nnull -> "nothing"\nv -> "got ${v}"\n})')).toEqual(["2", "neg", "nothing"]);
+  });
+  it("ranges as values and in loops", () => {
+    expect(out("print(0..3)\nprint(3..3)\nprint(5..2)\nlet n = 2\nprint(0..n + 1)")).toEqual(["[0, 1, 2]", "[]", "[]", "[0, 1, 2]"]);
+    expect(fails("print(0..20000000)")).toContain("would not fit");
+  });
+  it("list of lists is structural", () => {
+    expect(out("print([[1], [2]] == [[1], [2]])")).toEqual(["true"]);
+  });
+  it("mutation inside loop over the list body does not change iteration", () => {
+    expect(out("let xs = [1, 2]\nloop x in xs {\nxs[0] = 99\nprint(x)\n}")).toEqual(["1", "2"]);
+  });
+});
