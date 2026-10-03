@@ -160,3 +160,25 @@ describe("interpreter data types", () => {
     expect(out("let xs = [1, 2]\nloop x in xs {\nxs[0] = 99\nprint(x)\n}")).toEqual(["1", "2"]);
   });
 });
+
+describe("interpreter: hoisting and variadic print", () => {
+  it("a fn can be called before its declaration at top level", () => {
+    expect(out("print(double(4))\nfn double(n: Int) -> Int {\nreturn n * 2\n}")).toEqual(["8"]);
+  });
+  it("mutually recursive fns", () => {
+    const src = "fn isEven(n: Int) -> Bool {\nif n == 0 {\nreturn true\n}\nreturn isOdd(n - 1)\n}\nfn isOdd(n: Int) -> Bool {\nif n == 0 {\nreturn false\n}\nreturn isEven(n - 1)\n}\nprint(isEven(10))\nprint(isOdd(7))";
+    expect(out(src)).toEqual(["true", "true"]);
+  });
+  it("hoisting works inside fn bodies too", () => {
+    expect(out("fn outer() -> Int {\nlet r = inner()\nfn inner() -> Int {\nreturn 41\n}\nreturn r + 1\n}\nprint(outer())")).toEqual(["42"]);
+  });
+  it("a record can be constructed before its record line", () => {
+    expect(out("let p = Point(x: 1, y: 2)\nprint(p)\nrecord Point { x: Int, y: Int }")).toEqual(["Point(x: 1, y: 2)"]);
+  });
+  it("print joins several arguments with a single space", () => {
+    expect(out('print(1, "a", 2.0)')).toEqual(["1 a 2.0"]);
+  });
+  it("print with zero arguments is a runtime error", () => {
+    expect(fails("print()")).toContain("print takes 1 argument(s), got 0");
+  });
+});

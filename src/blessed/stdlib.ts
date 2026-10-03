@@ -7,7 +7,7 @@ const builtin = (name: string, arity: number, fn: (args: Value[]) => Value): Val
 
 export function globals(interp: Interpreter): Env {
   const g = new Env();
-  g.define("print", builtin("print", 1, ([v]) => { interp.stdout.push(show(v)); return NULL; }));
+  g.define("print", builtin("print", -1, (vs) => { interp.stdout.push(vs.map(show).join(" ")); return NULL; }));
   g.define("String", builtin("String", 1, ([v]) => str(show(v))));
   g.define("Int", builtin("Int", 1, ([v]) => {
     if (v.t === "Int") return v;

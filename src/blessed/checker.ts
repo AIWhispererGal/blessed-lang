@@ -501,6 +501,14 @@ class Checker {
       if (missing.length) this.err(line, D.missingFields(name, missing));
       return T.rec(name);
     }
+    // print is variadic: one or more arguments of any non-null type
+    if (e.callee.kind === "Ident" && e.callee.name === "print" && scope.lookup("print") === this.global.vars.get("print")) {
+      this.exprNonNull(e.callee, scope);
+      this.namedArgs(e, scope, true);
+      if (e.args.length === 0) return this.err(line, D.wrongArgCount("print", 1, 0));
+      for (const a of e.args) this.exprNonNull(a, scope);
+      return T.Null;
+    }
     // conversions
     if (e.callee.kind === "Ident" && ["String", "Int", "Float", "Complex"].includes(e.callee.name) && !scope.lookup(e.callee.name)) {
       if (e.args.length !== 1) return this.err(line, D.wrongArgCount(e.callee.name, 1, e.args.length));

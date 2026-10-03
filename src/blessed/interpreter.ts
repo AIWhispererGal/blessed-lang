@@ -36,7 +36,15 @@ export class Interpreter {
   tick() { if (++this.steps > this.stepBudget) throw new BudgetError(D.stepBudget()); }
 
   // ---------- statements
-  execBlock(stmts: Stmt[], env: Env) { for (const s of stmts) this.exec(s, env); }
+  execBlock(stmts: Stmt[], env: Env) { this.hoist(stmts, env); for (const s of stmts) this.exec(s, env); }
+
+  /** Pre-defines every fn and registers every record in a block, so they can be used before their declaration line (mutual recursion included). */
+  hoist(stmts: Stmt[], env: Env) {
+    for (const s of stmts) {
+      if (s.kind === "FnDecl") env.define(s.name, { t: "Function", name: s.name, params: s.params, body: s.body, env });
+      else if (s.kind === "RecordDecl") this.records.set(s.name, s.fields.map(f => f.name));
+    }
+  }
 
   exec(s: Stmt, env: Env): void {
     this.tick();
@@ -87,8 +95,12 @@ export class Interpreter {
         }
         return;
       }
-      case "FnDecl": env.define(s.name, { t: "Function", name: s.name, params: s.params, body: s.body, env }); return;
-      case "RecordDecl": this.records.set(s.name, s.fields.map(f => f.name)); return;
+      case "FnDecl": {
+        const cur = env.has(s.name) ? env.lookup(s.name) : undefined;
+        if (cur?.t === "Function" && cur.body === s.body) return;     // already hoisted by execBlock/evalBlockValue
+        env.define(s.name, { t: "Function", name: s.name, params: s.params, body: s.body, env }); return;
+      }
+      case "RecordDecl": if (!this.records.has(s.name)) this.records.set(s.name, s.fields.map(f => f.name)); return;
       case "Return": throw new ReturnSignal(s.expr ? this.evalExpr(s.expr, env) : NULL);
       case "Fail": {
         const v = this.evalExpr(s.expr, env);
@@ -203,6 +215,7 @@ export class Interpreter {
 
   /** Executes a block; the value of a trailing ExprStmt is the block's value, else null. */
   evalBlockValue(body: Stmt[], env: Env): Value {
+    this.hoist(body, env);
     for (let i = 0; i < body.length; i++) {
       const s = body[i];
       if (i === body.length - 1 && s.kind === "ExprStmt") { this.tick(); return this.evalExpr(s.expr, env); }
@@ -237,7 +250,8 @@ export class Interpreter {
 
   callFunction(f: Value, args: Value[], _named: { name: string; value: Value }[], _line: number): Value {
     if (f.t === "Builtin") {
-      if (args.length !== f.arity) throw new BlessedError(D.wrongArgCount(f.name, f.arity, args.length));
+      if (f.arity === -1) { if (args.length === 0) throw new BlessedError(D.wrongArgCount(f.name, 1, 0)); }
+      else if (args.length !== f.arity) throw new BlessedError(D.wrongArgCount(f.name, f.arity, args.length));
       return f.fn(args);
     }
     if (f.t !== "Function") throw new BlessedError(D.notCallable(typeName(f)));

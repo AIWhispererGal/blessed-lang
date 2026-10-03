@@ -254,3 +254,14 @@ describe("checker: first-round deviations", () => {
     expect(warnings("fn f() -> Int {\n1;\n}")).toEqual(["2: Formatter will remove this semicolon. Semicolons are optional. Don't think about it."]);
   });
 });
+
+describe("checker: hoisting and variadic print", () => {
+  it("print accepts one or more arguments of any type", () => { clean('print(1, "a", 2.0, [1], true)'); });
+  it("print() is an error", () => { expect(errors("print()")[0]).toContain("print takes 1 argument(s), got 0"); });
+  it("a nullable argument to print is still rejected", () => {
+    expect(errors("let nick: String? = null\nprint(nick, 1)")[0]).toContain("'nick' may be null");
+  });
+  it("fns and records may be used before their declaration", () => {
+    clean("print(f(1))\nfn f(n: Int) -> Int {\nreturn g(n)\n}\nfn g(n: Int) -> Int {\nreturn n\n}\nlet p = P(a: 1)\nrecord P { a: Int }");
+  });
+});
