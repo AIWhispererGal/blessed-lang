@@ -1,7 +1,7 @@
 import type { Program, Stmt, Expr, TypeExpr, Pattern, Param } from "./ast";
 import { parse } from "./parser";
 import { D, formatDiagnostic } from "./diagnostics";
-import { showFloat } from "./values";
+import { showFloatLiteral, plainDecimal } from "./values";
 
 const IND = "    ";
 const PREC: Record<string, number> = { "??": 1, "or": 2, "and": 3, "==": 4, "!=": 4, "is": 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "..": 6, "+": 7, "-": 7, "*": 8, "/": 8, "%": 8 };
@@ -122,8 +122,11 @@ function expr(e: Expr, depth = 0, parentPrec = 0): string {
   const p = IND.repeat(depth);
   switch (e.kind) {
     case "IntLit": return e.value.toString();
-    case "FloatLit": return e.value === Infinity ? "Infinity" : showFloat(e.value);
-    case "ComplexLit": return e.re === 0 ? `${num(e.im)}i` : `${num(e.re)} ${e.im < 0 ? "-" : "+"} ${num(Math.abs(e.im))}i`;
+    case "FloatLit": return paren(showFloatLiteral(e.value), e.value < 0 && parentPrec > 9);
+    case "ComplexLit":
+      // `3 + 4i` reads back as an addition (precedence 7); `-4i` as a negation
+      if (e.re === 0) return paren(`${plainDecimal(e.im)}i`, e.im < 0 && parentPrec > 9);
+      return paren(`${plainDecimal(e.re)} ${e.im < 0 ? "-" : "+"} ${plainDecimal(Math.abs(e.im))}i`, parentPrec > 7);
     case "StrLit": return '"' + e.parts.map(x => typeof x === "string" ? escape(x) : "${" + expr(x) + "}").join("") + '"';
     case "BoolLit": return String(e.value);
     case "NullLit": return "null";
@@ -159,7 +162,7 @@ function expr(e: Expr, depth = 0, parentPrec = 0): string {
       });
       return [`match ${expr(e.subject, depth)} {`, ...arms, `${p}}`].join("\n");
     }
-    case "With": return `${expr(e.target, depth, 10)} with { ${e.fields.map(f => `${f.name}: ${expr(f.value, depth)}`).join(", ")} }`;
+    case "With": return paren(`${expr(e.target, depth, 10)} with { ${e.fields.map(f => `${f.name}: ${expr(f.value, depth)}`).join(", ")} }`, parentPrec > 0);
   }
 }
 
@@ -172,7 +175,6 @@ function pattern(pt: Pattern): string {
   }
 }
 
-const num = (n: number) => Number.isInteger(n) ? String(n) : String(n);
 const paren = (s: string, yes: boolean) => yes ? `(${s})` : s;
 const escape = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\t/g, "\\t").replace(/\$\{/g, "\\${");
 

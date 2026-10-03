@@ -1,7 +1,7 @@
 // src/blessed/translate/typescript.ts
 // AST -> TypeScript emitter. Int becomes bigint; checker types choose Int, Float and Complex semantics.
 import type { Program, Stmt, Expr, TypeExpr, Pattern } from "../ast";
-import { showFloat } from "../values";
+import { showFloatLiteral, plainDecimal } from "../values";
 import { D } from "../diagnostics";
 import { checkWithTypes, type Type } from "../checker";
 
@@ -231,8 +231,8 @@ class Ts {
     const p = IND.repeat(depth);
     switch (e.kind) {
       case "IntLit": return `${e.value}n`;
-      case "FloatLit": return e.value === Infinity ? "Infinity" : e.value === -Infinity ? paren("-Infinity", UNARY) : showFloat(e.value);
-      case "ComplexLit": this.uses.add("Complex"); return `new Complex(${e.re}, ${e.im})`;
+      case "FloatLit": return e.value === Infinity ? "Infinity" : e.value === -Infinity ? paren("-Infinity", UNARY) : paren(showFloatLiteral(e.value), e.value < 0 ? UNARY : POSTFIX);
+      case "ComplexLit": this.uses.add("Complex"); return `new Complex(${plainDecimal(e.re)}, ${plainDecimal(e.im)})`;
       case "StrLit":
         if (e.parts.every(x => typeof x === "string")) return JSON.stringify(e.parts.join(""));
         return "`" + e.parts.map(x => typeof x === "string" ? x.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${") : `\${${this.expr(x, depth)}}`).join("") + "`";

@@ -90,6 +90,25 @@ export function showFloat(n: number): string {
   return Number.isInteger(r) ? r.toFixed(1) : String(r);
 }
 
+/** A number as plain source digits: exact round-trip (shortest repr), never exponent form. Infinity becomes the keyword. */
+export function plainDecimal(n: number): string {
+  if (!Number.isFinite(n)) return n > 0 ? "Infinity" : "-Infinity";
+  const s = String(n);
+  const m = /^(-?)(\d+)(?:\.(\d+))?e([-+]\d+)$/.exec(s);
+  if (!m) return s;
+  const [, sign, whole, frac = "", exp] = m;
+  const digits = whole + frac; const point = whole.length + Number(exp);
+  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+  if (point >= digits.length) return sign + digits + "0".repeat(point - digits.length);
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
+/** A Float as a BLESSED source literal: round-trips exactly, plain decimal digits, `.0` on integers. Runtime printing uses showFloat. */
+export function showFloatLiteral(n: number): string {
+  const s = plainDecimal(n);
+  return Number.isFinite(n) && !s.includes(".") ? s + ".0" : s;
+}
+
 export function show(v: Value): string {
   switch (v.t) {
     case "Int": return v.v.toString();

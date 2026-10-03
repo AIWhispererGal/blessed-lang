@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { int, float, str, bool, complex, list, NULL, equals, identical, show, mapKey, checkFloat, makeComplex, BlessedError, typeName, Value } from "../values";
+import { int, float, str, bool, complex, list, NULL, equals, identical, show, mapKey, checkFloat, makeComplex, BlessedError, typeName, Value, showFloatLiteral, plainDecimal } from "../values";
 
 const rec = (name: string, f: Record<string, Value>): Value => ({ t: "Record", name, fields: new Map(Object.entries(f)) });
 const map = (pairs: [Value, Value][]): Value => ({ t: "Map", entries: new Map(pairs.map(([k, v]) => [mapKey(k), { key: k, value: v }])) });
@@ -65,5 +65,17 @@ describe("values", () => {
   it("show keeps 15 significant digits", () => {
     expect(show(float(1234567890123.5))).toBe("1234567890123.5");
     expect(show(float(0.1 + 0.2))).toBe("0.3");
+  });
+  it("showFloatLiteral round-trips exactly in plain decimal", () => {
+    for (const n of [3.141592653589793, 1e-7, 1.5e-300, 1e21, 2.5e25, 0.1 + 0.2, 42, 123.456]) {
+      const lit = showFloatLiteral(n);
+      expect(lit).not.toMatch(/e/);
+      expect(Number(lit)).toBe(n);
+    }
+    expect(showFloatLiteral(1e-7)).toBe("0.0000001");
+    expect(showFloatLiteral(3)).toBe("3.0");
+    expect(showFloatLiteral(1e21)).toBe("1000000000000000000000.0");
+    expect(showFloatLiteral(Infinity)).toBe("Infinity");
+    expect(plainDecimal(4)).toBe("4");
   });
 });

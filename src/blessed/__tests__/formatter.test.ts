@@ -2,6 +2,9 @@
 import { describe, it, expect } from "vitest";
 import { formatSource } from "../formatter";
 import { parse } from "../parser";
+import { executeBlessed } from "../index";
+import { EXAMPLES } from "../examples";
+import { COMMANDMENTS } from "../commandments";
 
 const fmt = (s: string) => formatSource(s).formatted;
 
@@ -146,5 +149,36 @@ print([1, 2][0..1], not true, -Infinity, (1 + 2) * 3, "s\${z.re}")`;
     const r = formatSource("let = 1");
     expect(r.formatted).toBe("let = 1");
     expect(r.logs[0]).toMatch(/^Line 1: CompileError/);
+  });
+});
+
+describe("format then re-run", () => {
+  const TRICKY: [string, string][] = [
+    ["complex in operator position", "let z = Complex(2) * (3 + 4i)\nprint(z, (3 + 4i).abs(), (1 + 2i) - (3 + 4i))"],
+    ["negated complex", "print(-(3 + 4i), -(4i))"],
+    ["long float", "print(3.141592653589793, 0.1 + 0.2 == 0.30000000000000004)"],
+    ["huge and tiny floats", "print(0.0000001 * 10000000.0, 123456789012345678901234567890.0 / 1000000000000000000000000000.0)"],
+    ["tiny complex", "print(0.0000001i * 10000000.0i)"],
+    ["parenthesised with", "record P { x: Int }\nlet p = P(x: 1)\nlet q = P(x: 3)\nprint((p with { x: 3 }) == q, (p with { x: 9 }).x)"],
+    ["range of a range start", "let a = 1\nlet b = 3\nprint((0..2).length, (a..b).map(fn(i: Int) { i * 2 }))"],
+    ["negative receiver", "print((-1).abs(), (-2.5).abs())"],
+  ];
+  const cases: [string, string][] = [
+    ...Object.entries(EXAMPLES).filter(([k]) => k !== "budget").map(([k, ex]) => [`example ${k}`, ex.code] as [string, string]),
+    ...COMMANDMENTS.map(c => [`commandment ${c.n}`, c.snippet] as [string, string]),
+    ...TRICKY,
+  ];
+  for (const [name, src] of cases) {
+    it(name, () => {
+      const before = executeBlessed(src); const formatted = fmt(src); const after = executeBlessed(formatted);
+      expect(before.errors).toEqual([]);
+      expect(after.errors).toEqual([]);
+      expect(after.stdout).toEqual(before.stdout);
+    });
+  }
+  it("float literals print exactly, without exponent form", () => {
+    expect(fmt("let a = 3.141592653589793\nlet b = 0.0000001\nlet c = 100000000000000000000000.0")).toBe("let a = 3.141592653589793\nlet b = 0.0000001\nlet c = 100000000000000000000000.0");
+    expect(fmt("let z = (3 + 4i).abs()\nlet w = -(3 + 4i)\nlet v = 2 * (1 - 2i)")).toBe("let z = (3 + 4i).abs()\nlet w = -(3 + 4i)\nlet v = 2 * (1 - 2i)");
+    expect(fmt("let t = (p with { x: 3 }) == q\nlet u = (p with { x: 9 }).x")).toBe("let t = (p with { x: 3 }) == q\nlet u = (p with { x: 9 }).x");
   });
 });

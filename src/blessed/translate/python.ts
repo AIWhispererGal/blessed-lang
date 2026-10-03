@@ -1,7 +1,7 @@
 // src/blessed/translate/python.ts
 // AST -> Python 3.10+ emitter. Uses checker types to choose between Int and Float semantics.
 import type { Program, Stmt, Expr, TypeExpr, Pattern } from "../ast";
-import { showFloat } from "../values";
+import { showFloatLiteral, plainDecimal } from "../values";
 import { D } from "../diagnostics";
 import { checkWithTypes, type Type } from "../checker";
 
@@ -297,7 +297,7 @@ class Py {
       case "PBind": return pt.name;
       case "PLit": {
         const v = pt.value;
-        if (v.kind === "ComplexLit") return v.re === 0 ? `${v.im}j` : `${v.re} ${v.im < 0 ? "-" : "+"} ${Math.abs(v.im)}j`;   // complex(...) is not a pattern
+        if (v.kind === "ComplexLit") return v.re === 0 ? `${plainDecimal(v.im)}j` : `${plainDecimal(v.re)} ${v.im < 0 ? "-" : "+"} ${plainDecimal(Math.abs(v.im))}j`;   // complex(...) is not a pattern
         return this.expr(v);
       }
       case "PRecord": return `${pt.name}(${pt.fields.map(f => `${f.name}=${this.pattern(f.pattern)}`).join(", ")})`;
@@ -334,8 +334,8 @@ class Py {
     const paren = (s: string, prec: number) => prec < parentPrec ? `(${s})` : s;
     switch (e.kind) {
       case "IntLit": return e.value.toString();
-      case "FloatLit": if (!Number.isFinite(e.value)) { this.uses.add("math"); return paren(e.value > 0 ? "math.inf" : "-math.inf", UNARY); } return paren(showFloat(e.value), e.value < 0 ? UNARY : POSTFIX);
-      case "ComplexLit": return `complex(${e.re}, ${e.im})`;
+      case "FloatLit": if (!Number.isFinite(e.value)) { this.uses.add("math"); return paren(e.value > 0 ? "math.inf" : "-math.inf", UNARY); } return paren(showFloatLiteral(e.value), e.value < 0 ? UNARY : POSTFIX);
+      case "ComplexLit": return `complex(${plainDecimal(e.re)}, ${plainDecimal(e.im)})`;
       case "StrLit": return this.str(e.parts);
       case "BoolLit": return e.value ? "True" : "False";
       case "NullLit": return "None";
