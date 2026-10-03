@@ -99,7 +99,7 @@ export class Interpreter {
   }
 
   truth(v: Value): boolean {
-    if (v.t !== "Bool") throw new BlessedError(D.notBool(typeName(v), show(v)));
+    if (v.t !== "Bool") throw new BlessedError(D.notBoolRuntime(typeName(v)));
     return v.v;
   }
 
@@ -145,7 +145,7 @@ export class Interpreter {
         if (v.t === "Int") return int(-v.v);
         if (v.t === "Float") return float(-v.v);
         if (v.t === "Complex") return complex(-v.re, -v.im);
-        throw new BlessedError(D.runtimeType("-", typeName(v), ""));
+        throw new BlessedError(D.runtimeUnary("-", typeName(v)));
       }
       case "Binary": return this.evalBinary(e.op, e.left, e.right, env);
       case "Call": {
@@ -161,16 +161,16 @@ export class Interpreter {
       }
       case "Index": {
         const obj = this.evalExpr(e.obj, env);
-        if (e.index.kind === "Range" && obj.t === "List") {
+        if (e.index.kind === "Range" && (obj.t === "List" || obj.t === "String")) {
           const a = this.evalExpr(e.index.start, env), b = this.evalExpr(e.index.end, env);
           if (a.t !== "Int" || b.t !== "Int") throw new BlessedError(D.rangeEndsInt());
-          return list(obj.items.slice(Number(a.v), Number(b.v)));
+          if (obj.t === "List") return list(obj.items.slice(Number(a.v), Number(b.v)));
+          return str([...obj.v].slice(Number(a.v), Number(b.v)).join(""));
         }
         const idx = this.evalExpr(e.index, env);
         if (obj.t === "List") return obj.items[this.listIndex(obj.items, idx)];
         if (obj.t === "Map") return obj.entries.get(mapKey(idx))?.value ?? NULL;
         if (obj.t === "String") {
-          if (e.index.kind === "Range") { const a = this.evalExpr(e.index.start, env) as any, b = this.evalExpr(e.index.end, env) as any; return str([...obj.v].slice(Number(a.v), Number(b.v)).join("")); }
           const chars = [...obj.v]; return str(chars[this.listIndex(chars.map(str), idx)]);
         }
         throw new BlessedError(D.notIndexable(typeName(obj)));
@@ -242,7 +242,7 @@ export class Interpreter {
     }
     if (f.t !== "Function") throw new BlessedError(D.notCallable(typeName(f)));
     if (args.length !== f.params.length) throw new BlessedError(D.wrongArgCount(f.name, f.params.length, args.length));
-    if (++this.depth > this.depthLimit) { this.depth = 0; throw new BlessedError(D.recursionLimit()); }
+    if (++this.depth > this.depthLimit) { this.depth--; throw new BlessedError(D.recursionLimit()); }
     const env = new Env(f.env);
     f.params.forEach((p, i) => env.define(p.name, args[i]));
     try { return this.evalBlockValue(f.body, env); }

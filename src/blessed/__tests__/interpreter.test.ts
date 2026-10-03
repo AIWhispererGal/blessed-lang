@@ -93,4 +93,19 @@ describe("interpreter core", () => {
   it("PI and E exist", () => {
     expect(out("print(PI > 3.14 and PI < 3.15)\nprint(E > 2.71 and E < 2.72)")).toEqual(["true", "true"]);
   });
+  it("slice bounds are evaluated once for String and List", () => {
+    expect(out('fn nx() -> Int {\nprint("called")\nreturn 2\n}\nprint("abcd"[0..nx()])')).toEqual(["called", "ab"]);
+    expect(out('fn nx() -> Int {\nprint("called")\nreturn 2\n}\nprint([1, 2, 3][0..nx()])')).toEqual(["called", "[1, 2]"]);
+    expect(out('print("abc"[0..20000000])')).toEqual(["abc"]);
+  });
+  it("runtime unary and conversion errors read cleanly", () => {
+    expect(fails('let s = "a"\nprint(-s)')).toBe("RuntimeError: cannot apply '-' to String at runtime. The type was only knowable now, and now we know.");
+    expect(fails("print(Int(true))")).toBe("RuntimeError: cannot apply 'Int()' to Bool at runtime. The type was only knowable now, and now we know.");
+  });
+  it("runtime non-Bool condition does not echo a value", () => {
+    expect(fails('let xs = ["Bob"]\nloop x in xs {\nif x {\nprint(1)\n}\n}')).toBe("RuntimeError: Condition is String, not Bool. BLESSED is not interested in truthy/falsy load-bearing conventions that were always wrong. Please make it explicit.");
+  });
+  it("depth stays balanced after a caught recursion failure", () => {
+    expect(out('fn f(n: Int) -> Int {\nreturn f(n + 1)\n}\nfn g(n: Int) -> Int {\nif n == 0 {\nreturn 0\n}\nreturn 1 + g(n - 1)\n}\nloop x in [1] despite errors {\nf(0)\n}\nprint(g(400))')).toEqual(["400"]);
+  });
 });

@@ -13,20 +13,20 @@ export function globals(interp: Interpreter): Env {
     if (v.t === "Int") return v;
     if (v.t === "Float") { if (!Number.isFinite(v.v)) throw new BlessedError(D.intFromInfinity()); return int(Math.trunc(v.v)); }
     if (v.t === "String") return /^\s*-?\d+\s*$/.test(v.v) ? int(BigInt(v.v.trim())) : NULL;
-    throw new BlessedError(D.runtimeType("Int()", typeName(v), ""));
+    throw new BlessedError(D.runtimeUnary("Int()", typeName(v)));
   }));
   g.define("Float", builtin("Float", 1, ([v]) => {
     if (v.t === "Float") return v;
     if (v.t === "Int") return float(Number(v.v));
     if (v.t === "String") { const s = v.v.trim(); if (!/^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) return NULL; const n = Number(s); return Number.isFinite(n) ? float(n) : NULL; }
     if (v.t === "Complex") { if (v.im !== 0) throw new BlessedError(D.floatFromComplex()); return float(v.re); }
-    throw new BlessedError(D.runtimeType("Float()", typeName(v), ""));
+    throw new BlessedError(D.runtimeUnary("Float()", typeName(v)));
   }));
   g.define("Complex", builtin("Complex", 1, ([v]) => {
     if (v.t === "Complex") return v;
     if (v.t === "Int") return complex(Number(v.v), 0);
     if (v.t === "Float") return complex(checkFloat(v.v, "Complex()"), 0);
-    throw new BlessedError(D.runtimeType("Complex()", typeName(v), ""));
+    throw new BlessedError(D.runtimeUnary("Complex()", typeName(v)));
   }));
   g.define("PI", float(Math.PI));
   g.define("E", float(Math.E));

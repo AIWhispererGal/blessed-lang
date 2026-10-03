@@ -65,6 +65,8 @@ export const D = {
   stepBudget: () => `Execution exceeded 1,000,000 steps. Either the loop is infinite or the universe is. Check the loop first.`,
   recursionLimit: () => `Call depth exceeded 500. The function called itself more times than anyone has called you.`,
   runtimeType: (op: string, a: string, b: string) => `cannot apply '${op}' to ${a} and ${b} at runtime. The types were only knowable now, and now we know.`,
+  runtimeUnary: (op: string, t: string) => `cannot apply '${op}' to ${t} at runtime. The type was only knowable now, and now we know.`,
+  notBoolRuntime: (t: string) => `Condition is ${t}, not Bool. BLESSED is not interested in truthy/falsy load-bearing conventions that were always wrong. Please make it explicit.`,
   intFromInfinity: () => `Int(Infinity) is not a count. There is no infinite count.`,
   floatFromComplex: () => `Float(z) only works when z.im == 0.0. Did you mean z.re?`,
   // formatter
