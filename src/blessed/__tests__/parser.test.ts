@@ -129,4 +129,18 @@ describe("parser expressions", () => {
   it("reports the line of an error", () => {
     expect(err("let a = 1\nlet b = (1 + ").line).toBe(2);
   });
+  it("range binds looser than +, tighter than comparison, and does not chain", () => {
+    expect(expr("k + 1..n + 1")).toMatchObject({ kind: "Range", start: { op: "+" }, end: { op: "+" } });
+    expect(expr("-1..3")).toMatchObject({ kind: "Range", start: { kind: "Unary" } });
+    expect(expr("a..b < c")).toMatchObject({ op: "<", left: { kind: "Range" } });
+    expect(stmt("loop i in 0..n + 1 {\n}")).toMatchObject({ iter: { kind: "Range", end: { op: "+" } } });
+    expect(err("a..b..c").message).toContain("end of range");
+  });
+  it("negative complex fold", () => {
+    expect(expr("-3 + 4i")).toEqual({ kind: "ComplexLit", re: -3, im: 4, span: { line: 1 } });
+  });
+  it("block-end comments are kept", () => {
+    expect(stmt("fn f() {\nlet x = 1\n-- end\n}").body[0].after).toEqual(["-- end"]);
+    expect(stmt("if a {\n-- only\n}").innerComments).toEqual(["-- only"]);
+  });
 });

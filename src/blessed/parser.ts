@@ -28,7 +28,7 @@ export function parseExprTokens(tokens: Token[]): Expr {
 }
 
 const BIN_PREC: Record<string, number> = {
-  "??": 1, "or": 2, "and": 3, "==": 4, "!=": 4, "is": 4, "<": 5, "<=": 5, ">": 5, ">=": 5,
+  "??": 1, "or": 2, "and": 3, "==": 4, "!=": 4, "is": 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "..": 5.5,
   "+": 6, "-": 6, "*": 7, "/": 7, "%": 7,
 };
 
@@ -36,6 +36,7 @@ class Parser {
   private i = 0;
   private pendingComments: string[] = [];
   private pendingBlank = 0;
+  private innerAcc: string[] = [];
   constructor(private toks: Token[]) {}
 
   // ---- token helpers
@@ -73,7 +74,7 @@ class Parser {
     return { body, trailingComments };
   }
 
-  parseBlock(): Stmt[] {
+  parseBlock(keepInner = true): Stmt[] {
     this.expectOp("{");
     const savedC = this.pendingComments, savedB = this.pendingBlank;
     this.pendingComments = []; this.pendingBlank = 0;
@@ -83,6 +84,10 @@ class Parser {
       if (this.at("EOF")) this.fail(D.expected("'}'", "end of input"));
       body.push(this.parseStmt());
       this.skipTrivia();
+    }
+    if (this.pendingComments.length) {
+      if (body.length) body[body.length - 1].after = this.pendingComments;
+      else if (keepInner) this.innerAcc.push(...this.pendingComments);
     }
     this.pendingComments = savedC; this.pendingBlank = savedB;
     this.expectOp("}");
@@ -105,6 +110,14 @@ class Parser {
   }
 
   private parseStmtInner(): Stmt {
+    const saved = this.innerAcc; this.innerAcc = [];
+    const s = this.parseStmtCore();
+    if (this.innerAcc.length) s.innerComments = this.innerAcc;
+    this.innerAcc = saved;
+    return s;
+  }
+
+  private parseStmtCore(): Stmt {
     const t = this.peek(); const span = this.span(t);
     const base = { span, leading: [], blankBefore: 0 };
     if (this.atKw("let")) {
@@ -248,10 +261,17 @@ class Parser {
       const prec = BIN_PREC[op];
       if (prec === undefined || prec < minPrec) break;
       this.next(); this.skipNewlines();
-      const right = this.parseExpr(prec + 1);
+      const right = this.parseExpr(op === ".." ? BIN_PREC["+"] : prec + 1);
+      if (op === "..") {
+        if (this.atOp("..")) this.fail(D.expected("end of range", "'..'"));
+        left = { kind: "Range", start: left, end: right, span: left.span };
+        continue;
+      }
       // fold `<number> + <imag>` into a ComplexLit
-      if ((op === "+" || op === "-") && (left.kind === "IntLit" || left.kind === "FloatLit") && right.kind === "ComplexLit" && right.re === 0 && isFinite(Number(left.value))) {
-        left = { kind: "ComplexLit", re: Number(left.value), im: op === "+" ? right.im : -right.im, span: left.span };
+      const negLeft = left.kind === "Unary" && left.op === "-" && (left.expr.kind === "IntLit" || left.expr.kind === "FloatLit");
+      const numLeft = negLeft ? (left as any).expr : left;
+      if ((op === "+" || op === "-") && (numLeft.kind === "IntLit" || numLeft.kind === "FloatLit") && right.kind === "ComplexLit" && right.re === 0 && isFinite(Number(numLeft.value))) {
+        left = { kind: "ComplexLit", re: negLeft ? -Number(numLeft.value) : Number(numLeft.value), im: op === "+" ? right.im : -right.im, span: left.span };
         continue;
       }
       left = { kind: "Binary", op: op as BinOp, left, right, span: left.span };
@@ -302,10 +322,6 @@ class Parser {
         this.next();
         const name = this.expectKind("Ident").text;
         e = { kind: "Field", obj: e, name, span: e.span };
-      } else if (this.atOp("..")) {
-        this.next(); this.skipNewlines();
-        const end = this.parseExpr(BIN_PREC["+"]);     // range binds looser than arithmetic, tighter than comparison
-        e = { kind: "Range", start: e, end, span: e.span };
       } else break;
     }
     return e;
@@ -327,7 +343,7 @@ class Parser {
           case "Infinity": return { kind: "FloatLit", value: Infinity, span };
           case "fn": {
             const { params, ret } = this.parseParamsAndRet(false);
-            return { kind: "Lambda", params, ret, body: this.parseBlock(), span };
+            return { kind: "Lambda", params, ret, body: this.parseBlock(false), span };
           }
           case "match": return this.parseMatch(span);
         }
@@ -383,7 +399,7 @@ class Parser {
       if (this.atKw("if")) { this.next(); guard = this.parseExpr(); }
       this.expectOp("->"); this.skipNewlines();
       let body: Stmt[];
-      if (this.atOp("{")) body = this.parseBlock();
+      if (this.atOp("{")) body = this.parseBlock(false);
       else { const e = this.parseExpr(); body = [{ kind: "ExprStmt", expr: e, span: e.span, leading: [], blankBefore: 0 }]; }
       arms.push({ pattern, guard, body, span: armSpan });
       this.skipNewlines();

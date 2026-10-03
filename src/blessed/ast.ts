@@ -48,6 +48,6 @@ export type Stmt = (
   | { kind: "RecordDecl"; name: string; fields: { name: string; type: TypeExpr }[] }
   | { kind: "Return"; expr?: Expr }
   | { kind: "Fail"; expr: Expr }
-) & { span: Span; leading: string[]; blankBefore: number; trailing?: string; semicolon?: boolean };
+) & { span: Span; leading: string[]; blankBefore: number; trailing?: string; semicolon?: boolean; after?: string[]; innerComments?: string[] };
 
 export interface Program { body: Stmt[]; trailingComments: string[] }
