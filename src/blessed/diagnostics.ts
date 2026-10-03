@@ -59,6 +59,7 @@ export const D = {
   // runtime
   divByZero: () => `Division by zero. Int is a count and there is no infinite count.`,
   notANumber: (expr: string) => `${expr} is not a number. We will not pretend it is.`,
+  unhashableKey: (t: string) => `Map keys are String or Int. ${t} is neither, and BLESSED is not going to guess what it hashes to.`,
   indexOutOfRange: (i: string, len: number) => `Index ${i} is out of range for a list of length ${len}. Offsets have edges.`,
   rangeTooBig: () => `That range would not fit in anyone's memory. BLESSED will not pretend otherwise.`,
   stepBudget: () => `Execution exceeded 1,000,000 steps. Either the loop is infinite or the universe is. Check the loop first.`,

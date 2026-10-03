@@ -48,6 +48,9 @@ describe("values", () => {
   it("map keys distinguish Int 1 and String 1", () => {
     expect(mapKey(int(1))).not.toBe(mapKey(str("1")));
   });
+  it("refuses unhashable map keys", () => {
+    expect(() => mapKey(float(1.5))).toThrow(BlessedError);
+  });
   it("refuses NaN", () => {
     expect(() => checkFloat(0 / 0, "0.0 / 0.0")).toThrow(BlessedError);
     expect(() => checkFloat(0 / 0, "0.0 / 0.0")).toThrow("0.0 / 0.0 is not a number. We will not pretend it is.");

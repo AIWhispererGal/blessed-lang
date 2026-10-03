@@ -54,7 +54,7 @@ export function typeName(v: Value): string {
 export function mapKey(k: Value): string {
   if (k.t === "Int") return `Int:${k.v}`;
   if (k.t === "String") return `String:${k.v}`;
-  return `${k.t}:${show(k)}`;
+  throw new BlessedError(D.unhashableKey(typeName(k)));
 }
 
 export function equals(a: Value, b: Value): boolean {
@@ -94,9 +94,9 @@ export function show(v: Value): string {
     case "Int": return v.v.toString();
     case "Float": return showFloat(v.v);
     case "Complex": {
-      const plain = (n: number) => Number.isInteger(n) ? String(Math.abs(n)) : String(Math.abs(n));
+      const plain = (n: number) => String(Math.abs(n));
       if (v.re === 0) return `${v.im < 0 ? "-" : ""}${plain(v.im)}i`;
-      return `${Number.isInteger(v.re) ? v.re : v.re} ${v.im < 0 ? "-" : "+"} ${plain(v.im)}i`;
+      return `${String(v.re)} ${v.im < 0 ? "-" : "+"} ${plain(v.im)}i`;
     }
     case "String": return v.v;
     case "Bool": return v.v ? "true" : "false";
