@@ -13,7 +13,7 @@ not implemented, runtime type strictness does not exist, and infinite loops
 freeze the browser tab.
 
 This design replaces the regex passes with a real language front end and a
-tree-walking interpreter, and grows the language from ten rules to eighteen so
+tree-walking interpreter, and grows the language from ten rules to twenty so
 that small real programs can be written in it. The satirical voice of every
 diagnostic is preserved and becomes part of the tested contract.
 
@@ -190,6 +190,26 @@ print(Complex(-4.0).sqrt())   -- 2i
   Floats.
 - `Float(z)` fails unless `z.im == 0.0`, with a fix-it suggesting `z.re`.
 
+### §19 Ranges Are Values
+
+`a..b` is an expression of type `List<Int>`, half-open: `0..3` is
+`[0, 1, 2]`. Both ends must be Int. `b <= a` gives an empty list. Ranges are
+ordinary lists, so `(0..10).filter(fn(n) { n % 2 == 0 })` works and
+`loop i in 0..10 {` is the idiomatic counted loop. Slices `xs[a..b]` are
+unchanged; the parser treats the inside of the brackets as a range
+expression and the index operation special-cases a range operand.
+A range with more than 10,000,000 elements fails: "That range would not fit
+in anyone's memory. BLESSED will not pretend otherwise."
+
+### §20 Overflow Is Not Our Problem
+
+Int is arbitrary precision, backed by JavaScript BigInt. `2.pow(64)` and
+`25.factorial()` are exact. There is no wraparound, no MAX_INT, and no
+silent precision loss. `Float(i)` on an Int beyond 2^53 is allowed and
+rounds, because that is what Float means. Int literals have no size limit.
+Int `/` truncates toward zero and `%` takes the sign of the dividend, matching
+the existing rule.
+
 ### Standard library
 
 Methods on values. No free functions except `print` and the conversions.
@@ -197,10 +217,10 @@ Methods on values. No free functions except `print` and the conversions.
 | Type | Methods |
 |---|---|
 | String | `length`, `upper()`, `lower()`, `trim()`, `split(sep)`, `contains(s)`, `startsWith(s)`, `endsWith(s)`, `replace(a, b)` |
-| List | `length`, `push(x)` (returns new list), `map(f)`, `filter(f)`, `reduce(f, init)`, `join(sep)`, `contains(x)`, `reverse()`, `sort()` |
+| List | `length`, `push(x)` (returns new list), `map(f)`, `filter(f)`, `reduce(f, init)`, `join(sep)`, `contains(x)`, `reverse()`, `sort()`, and on `List<Int>` or `List<Float>` only: `sum()`, `min()`, `max()` (the last two return `T?`, null on an empty list) |
 | Map | `keys()`, `values()`, `has(k)` |
-| Int | `abs()` |
-| Float | `abs()`, `floor()`, `round()`, `sqrt()`, `pow(n)`, `sin()`, `cos()`, `tan()`, `exp()`, `log()` |
+| Int | `abs()`, `pow(n)` (n must be a non-negative Int; the checker suggests Float for negative exponents), `gcd(b)`, `factorial()` |
+| Float | `abs()`, `floor()`, `ceil()`, `round()`, `round(digits)`, `sqrt()`, `pow(n)`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2(x)`, `exp()`, `log()` |
 | Complex | `re`, `im`, `abs()`, `arg()`, `conj()`, `sqrt()`, `exp()`, `log()`, `pow(n)` |
 
 Constants `PI` and `E` are predeclared Floats.
@@ -282,8 +302,8 @@ exact text. The App shows the text only.
 ### Value model (`values.ts`)
 
 Tagged union: `Int`, `Float`, `Complex`, `String`, `Bool`, `Null`, `List`,
-`Map`, `Record`, `Function`. Int and Float are both JavaScript numbers but
-carry different tags and never mix. Int arithmetic: `/` truncates toward
+`Map`, `Record`, `Function`. Int is a JavaScript BigInt (§20); Float is a
+JavaScript number. They never mix without explicit conversion. Int arithmetic: `/` truncates toward
 zero, `/ 0` and `% 0` fail. Float arithmetic follows IEEE 754 with Infinity
 allowed; every Float and Complex operation is checked afterwards and fails
 if any result component is NaN (§17). Complex is a pair of Floats.
@@ -349,6 +369,8 @@ checker warns about it separately so the two agree.
 | `a == b` | `a == b` | `blessedEq(a, b)` helper emitted once |
 | `a is b` | `a is b` | `a === b` |
 | `a[-1]`, `a[0..2]` | same, `a[0:2]` | `a.at(-1)`, `a.slice(0, 2)` |
+| `0..n` as a value | `list(range(0, n))` | `Array.from({length: n}, (_, i) => i)` via a `blessedRange` helper |
+| Int | `int` (arbitrary precision already) | `bigint` with `n` suffix literals |
 | `loop x in xs despite errors as e` | `for` + `try/except Exception as e` | `for of` + `try/catch (e)` |
 | `fn f(a: Int) -> Int` | `def f(a: int) -> int:` | `function f(a: number): number` |
 | `record Point {...}` | `@dataclass(frozen=True)` | `interface Point` plus a factory |
@@ -380,7 +402,7 @@ Vitest, run with `npm test`. Layout under `src/blessed/__tests__/`:
 ## 6. App changes
 
 Minimal. `App.tsx` imports examples from `src/blessed/examples.ts`,
-gains eight new spec cards for §11 to §18 with verdict badges, gains examples
+gains ten new spec cards for §11 to §20 with verdict badges, gains examples
 for functions, records, maps, match, errors, and a math example that shows
 Infinity, the NaN refusal, and complex square roots, and labels the two reverse
 translators as best effort. The infinite-loop case gets an example so users
