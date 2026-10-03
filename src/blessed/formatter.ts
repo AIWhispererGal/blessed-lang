@@ -13,8 +13,8 @@ export function formatSource(code: string): { formatted: string; logs: string[] 
   const renames = new Map<string, string>();
   let semis = 0;
   walkStmts(program.body, s => { if (s.semicolon) semis++; });
-  walkNames(program, n => {
-    if (n.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(n) && !n.startsWith("_") && !renames.has(n)) {
+  walkNames(program, (n, decl) => {
+    if (decl && n.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(n) && !n.startsWith("_") && !renames.has(n)) {
       const to = n.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
       renames.set(n, to); logs.push(`Formatter Warning: ${D.snakeCase(n, to)}`);
     }
@@ -188,8 +188,8 @@ function walkStmts(body: Stmt[], f: (s: Stmt) => void) {
 }
 
 // Visits every declaration-site name and every Ident use; f maps each name. When apply is true the result is written back.
-function walkNames(p: Program, f: (n: string) => string, apply: boolean) {
-  const rn = (n: string) => { const r = f(n); return apply ? r : n; };
+function walkNames(p: Program, f: (n: string, decl: boolean) => string, apply: boolean) {
+  const rn = (n: string, decl = true) => { const r = f(n, decl); return apply ? r : n; };
   const pat = (q: Pattern): void => {
     if (q.kind === "PBind") q.name = rn(q.name);
     else if (q.kind === "PRecord") q.fields.forEach(x => pat(x.pattern));
@@ -197,7 +197,7 @@ function walkNames(p: Program, f: (n: string) => string, apply: boolean) {
   const prm = (ps: Param[]) => ps.forEach(x => { x.name = rn(x.name); });
   const ex = (e: Expr): void => {
     switch (e.kind) {
-      case "Ident": e.name = rn(e.name); return;
+      case "Ident": e.name = rn(e.name, false); return;
       case "StrLit": e.parts.forEach(x => typeof x !== "string" && ex(x)); return;
       case "ListLit": e.items.forEach(ex); return;
       case "MapLit": e.entries.forEach(en => { ex(en.key); ex(en.value); }); return;

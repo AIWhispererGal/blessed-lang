@@ -132,6 +132,16 @@ print([1, 2][0..1], not true, -Infinity, (1 + 2) * 3, "s\${z.re}")`;
     expect(parse(r.formatted).errors).toEqual([]);
     expect(fmt(r.formatted)).toBe(r.formatted);
   });
+  it("renames only declared variables, not functions or undeclared calls", () => {
+    const r = formatSource("fn my_fn(a_b: Int) -> Int {\n    return a_b\n}\nprint(my_fn(1))");
+    expect(r.formatted).toBe("fn my_fn(aB: Int) -> Int {\n    return aB\n}\n\nprint(my_fn(1))");
+    expect(parse(r.formatted).errors).toEqual([]);
+    const u = formatSource("print(some_fn(2))");
+    expect(u.formatted).toBe("print(some_fn(2))");
+    expect(u.logs).toEqual([]);
+    const f = formatSource("let my_field = 1\nprint(p.my_field, my_field)");
+    expect(f.formatted).toBe("let myField = 1\nprint(p.my_field, myField)");
+  });
   it("returns input unchanged with a log on parse error", () => {
     const r = formatSource("let = 1");
     expect(r.formatted).toBe("let = 1");
