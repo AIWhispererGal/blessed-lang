@@ -186,6 +186,7 @@ describe("checker: review fixes", () => {
     expect(errors("fn f() -> Int {\nif true {\nreturn 1\n}\n}")).toEqual(["1: 'f' promises Int but can finish without returning one. Promises matter."]);
     clean("fn g(n: Int) -> Int {\nif n > 0 {\nreturn 1\n} else {\nreturn 2\n}\n}");
     clean("fn h(n: Int) -> Int {\nlet m = n + 1\nm * 2\n}");
+    expect(errors('fn f(n: Int) -> Int {\nif n > 0 {\n"a"\n} else {\n"b"\n}\n}')).toEqual(["1: 'f' promises Int but can finish without returning one. Promises matter."]);
     clean("fn k(n: Int) -> Int? {\nif n > 0 {\nreturn 1\n}\n}");
     expect(errors("let f: Fn(Int) -> Int = fn(n: Int) -> Int {\nif n > 0 {\nreturn 1\n}\n}")[0]).toContain("'fn' promises Int");
   });

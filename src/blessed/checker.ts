@@ -70,12 +70,14 @@ function diverges(stmts: Stmt[]): boolean {
   return false;
 }
 
-/** Conservative: a function body terminates if every path ends in return, fail, an implicit-return expression, or a forever loop. */
-function terminates(stmts: Stmt[]): boolean {
+/** Conservative: a function body terminates if every path ends in return, fail, or a forever loop. A trailing expression is an implicit
+ *  return only at the top level of the body (`top`); inside if/else branches its value is discarded at runtime. */
+function terminates(stmts: Stmt[], top = false): boolean {
   const last = stmts[stmts.length - 1];
   if (!last) return false;
   switch (last.kind) {
-    case "Return": case "Fail": case "ExprStmt": return true;
+    case "Return": case "Fail": return true;
+    case "ExprStmt": return top;
     case "Loop": return last.shape === "forever";
     case "If": case "IfLet": return !!last.else && terminates(last.then) && terminates(last.else);
     default: return false;
@@ -273,7 +275,7 @@ class Checker {
       if (declaredRet) this.expect(tail.line, declaredRet, tail.type, tail.expr); else scope.fnRet!.inferred.push(tail.type);
     }
     if (declaredRet) {
-      if (declaredRet.k !== "Nullable" && declaredRet.k !== "Unknown" && !terminates(body)) this.err(line, D.missingReturn(name, showType(declaredRet)));
+      if (declaredRet.k !== "Nullable" && declaredRet.k !== "Unknown" && !terminates(body, true)) this.err(line, D.missingReturn(name, showType(declaredRet)));
       return declaredRet;
     }
     const inferred = scope.fnRet!.inferred;
