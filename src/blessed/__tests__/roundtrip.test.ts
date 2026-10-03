@@ -116,3 +116,32 @@ loop n in [1, 0] {
     expect(executeBlessed(src).stdout).toEqual(["point 1 2", "nothing"]);
   }, TIMEOUT);
 });
+
+describe.skipIf(!hasPython)("emitted Python: closures made in a loop keep that iteration's values", () => {
+  const src = `let fs: List<Fn() -> Int> = []
+loop i in 0..3 {
+    let twice = i * 2
+    fs = fs.push(fn() { i })
+    fs = fs.push(fn() { twice })
+    fn get() -> Int {
+        return i + 100
+    }
+    fs = fs.push(get)
+}
+loop f in fs {
+    print(f())
+}`;
+  it("runs under python3 and prints what the interpreter prints", () => {
+    const want = executeBlessed(src);
+    expect(want.errors).toEqual([]);
+    expect(want.stdout).toEqual(["0", "0", "100", "1", "2", "101", "2", "4", "102"]);
+    const out = translateBlessedToPython(src);
+    expect(out).toContain("lambda i=i: i");
+    expect(out).toContain("def get(i=i) -> int:");
+    const file = join(dir, "loopClosures.py");
+    writeFileSync(file, out);
+    const py = spawnSync("python3", [file], { encoding: "utf8", cwd: dir });
+    expect(py.stderr).toBe("");
+    expect(lines(py.stdout)).toEqual(want.stdout);
+  }, TIMEOUT);
+});

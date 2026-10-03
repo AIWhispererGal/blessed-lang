@@ -57,3 +57,13 @@ the playground shows them.
     src/blessed/formatter.ts    AST -> canonical source
     src/blessed/translate/      AST -> Python, AST -> TypeScript, plus best-effort reverse heuristics
     src/blessed/diagnostics.ts  every message, in character
+
+## Translator limits
+
+The Python and TypeScript translations aim to print exactly what the
+interpreter prints (the round-trip tests check every example). Known gaps:
+
+- **Block-scope shadowing (Python).** BLESSED blocks are scopes; Python's
+  `if`/`for`/`while` bodies are not. `let x = 2` inside an `if` that shadows an
+  outer `x` overwrites the outer one in the emitted Python. Closures made in a
+  loop body do keep that iteration's values (they capture by default argument).

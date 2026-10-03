@@ -133,6 +133,15 @@ function inlineMatch(s: Stmt): Match | undefined {
   return e?.kind === "Match" ? e : undefined;
 }
 
+/** Every identifier read anywhere inside an AST node, nested functions included. */
+function identNames(node: unknown, out = new Set<string>()): Set<string> {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) { for (const n of node) identNames(n, out); return out; }
+  if ((node as { kind?: string }).kind === "Ident") out.add((node as { name: string }).name);
+  for (const v of Object.values(node)) if (v && typeof v === "object") identNames(v, out);
+  return out;
+}
+
 function patternNames(p: Pattern, out: Set<string>) {
   if (p.kind === "PBind") out.add(p.name);
   if (p.kind === "PRecord") p.fields.forEach(f => patternNames(f.pattern, out));
@@ -184,6 +193,8 @@ class Py {
   matchCounter = 0; fnCounter = 0; tmpCounter = 0;
   records = new Set<string>();   // records whose class has been emitted; later references are forward references
   scopes: FnScope[] = [];        // enclosing Python functions, innermost last
+  /** Per-iteration names of the enclosing loop bodies (see loopBody). */
+  loopNames: Set<string>[] = [];
 
   constructor(private typeOf: (e: Expr) => Type) {}
 
@@ -256,18 +267,19 @@ class Py {
       case "If": return this.ifChain(s, depth, `${p}if ${this.expr(s.cond)}:`, holder);
       case "IfLet": return [`${p}${s.name} = ${this.expr(s.expr)}`, ...this.ifChain(s, depth, `${p}if ${s.name} is not None:`, holder)];
       case "Loop": {
-        if (s.shape === "forever") return [`${p}while True:`, ...this.stmts(s.body, depth + 1, undefined, holder)];
-        if (s.shape === "while") return [`${p}while ${this.expr(s.cond!)}:`, ...this.stmts(s.body, depth + 1, undefined, holder)];
+        const body = (d: number) => this.loopBody(s, () => this.stmts(s.body, d, undefined, holder));
+        if (s.shape === "forever") return [`${p}while True:`, ...body(depth + 1)];
+        if (s.shape === "while") return [`${p}while ${this.expr(s.cond!)}:`, ...body(depth + 1)];
         const iter = s.iter!.kind === "Range" ? `range(${this.expr(s.iter!.start)}, ${this.expr(s.iter!.end)})` : this.expr(s.iter!);
         const head = `${p}for ${s.item} in ${iter}:`;
-        if (!s.despite) return [head, ...this.stmts(s.body, depth + 1, undefined, holder)];
+        if (!s.despite) return [head, ...body(depth + 1)];
         const name = s.despite.errName;
         const pre = name ? [`${p}${name} = None`] : [];
         const handler = name ? [`${p}${IND}except Exception as _err:`, `${p}${IND}${IND}${name} = str(_err)`] : [`${p}${IND}except Exception:`, `${p}${IND}${IND}pass`];
-        return [...pre, head, `${p}${IND}try:`, ...this.stmts(s.body, depth + 2, undefined, holder), ...handler];
+        return [...pre, head, `${p}${IND}try:`, ...body(depth + 2), ...handler];
       }
       case "FnDecl": {
-        const ps = s.params.map(x => `${x.name}${x.type ? ": " + this.type(x.type) : ""}`).join(", ");
+        const ps = [...s.params.map(x => `${x.name}${x.type ? ": " + this.type(x.type) : ""}`), ...this.captures(s.body, s.params.map(x => x.name))].join(", ");
         const head = `${p}def ${s.name}(${ps})${s.ret ? " -> " + this.type(s.ret) : ""}:`;
         return [head, ...this.fnScope(s.params.map(x => x.name), s.body, new Set(), depth + 1,
           () => this.stmts(s.body, depth + 1, { wrap: c => `return ${c}` }, holder))];
@@ -281,6 +293,24 @@ class Py {
       case "Return": return m ? this.matchInline(m, depth, { wrap: c => `return ${c}` }) : [`${p}return${s.expr ? " " + this.expr(s.expr) : ""}`];
       case "Fail": return [`${p}raise Exception(${this.expr(s.expr)})`];
     }
+  }
+
+  /** BLESSED closures made in a loop body see that iteration's values; Python's late binding would see the last one. While the body
+   *  is emitted, its per-iteration names (the item and the lets it declares, unless reassigned) are captured by value. */
+  loopBody(s: Extract<Stmt, { kind: "Loop" }>, emit: () => string[]): string[] {
+    const locals = new Set<string>(s.item ? [s.item] : []), assigned = new Set<string>();
+    collectNames(s.body, locals, assigned);
+    this.loopNames.push(new Set([...locals].filter(n => !assigned.has(n))));
+    try { return emit(); } finally { this.loopNames.pop(); }
+  }
+
+  /** Default-argument captures (`i=i`) for the per-iteration loop names a function body reads. */
+  captures(body: Stmt[], params: string[]): string[] {
+    const live = new Set(this.loopNames.flatMap(x => [...x]));
+    if (!live.size) return [];
+    const locals = new Set<string>(), assigned = new Set<string>();   // a name the body declares or assigns is its own, not a capture
+    collectNames(body, locals, assigned);
+    return [...identNames(body)].filter(n => live.has(n) && !params.includes(n) && !locals.has(n) && !assigned.has(n)).map(n => `${n}=${n}`);
   }
 
   /** Emits a Python function body: `global`/`nonlocal` for outer variables it assigns, then the body itself. */
@@ -474,17 +504,18 @@ class Py {
 
   lambda(e: Extract<Expr, { kind: "Lambda" }>, parentPrec: number): string {
     const params = e.params.map(x => x.name);
+    const sig = [...params, ...this.captures(e.body, params)].join(", ");
     if (e.body.length === 1 && e.body[0].kind === "ExprStmt" && e.body[0].leading.length === 0 && !e.body[0].trailing) {
       const before = this.hoisted.length;
       this.scopes.push({ locals: new Set(params), globals: new Set(), nonlocals: new Set() });
       const body = this.expr(e.body[0].expr);
       this.scopes.pop();
       // a helper hoisted out of the lambda could not see its parameters: use a def instead
-      if (this.hoisted.length === before) { const s = `lambda ${params.join(", ")}: ${body}`; return parentPrec > 0 ? `(${s})` : s; }
+      if (this.hoisted.length === before) { const s = `lambda ${sig}: ${body}`; return parentPrec > 0 ? `(${s})` : s; }
       this.hoisted.splice(before);
     }
     const name = `_fn_${++this.fnCounter}`;
-    const lines = [`def ${name}(${params.join(", ")}):`, ...this.fnScope(params, e.body, new Set(), 1, () => this.stmts(e.body, 1, { wrap: c => `return ${c}` }))];
+    const lines = [`def ${name}(${sig}):`, ...this.fnScope(params, e.body, new Set(), 1, () => this.stmts(e.body, 1, { wrap: c => `return ${c}` }))];
     this.hoisted.push(...lines);
     return name;
   }
