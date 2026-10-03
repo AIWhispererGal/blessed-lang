@@ -195,6 +195,9 @@ class Py {
   scopes: FnScope[] = [];        // enclosing Python functions, innermost last
   /** Per-iteration names of the enclosing loop bodies (see loopBody). */
   loopNames: Set<string>[] = [];
+  /** Names bound by statements emitted after the one being emitted (one set per enclosing block, while inside a loop). A def or
+   *  lambda emitted before such a binding runs (orderDecls hoists defs) must not take it as a default argument: it does not exist yet. */
+  pending: Set<string>[] = [];
 
   constructor(private typeOf: (e: Expr) => Type) {}
 
@@ -221,8 +224,16 @@ class Py {
       if (i > 0 && (s.blankBefore > 0 || prevDecl || s.kind === "FnDecl")) out.push("");
       for (const c of s.leading) out.push(p + this.comment(c));
       const before = this.hoisted.length;
+      let later: Set<string> | undefined;
+      if (this.loopNames.length) {
+        later = new Set<string>(); collectNames(ordered.slice(i + 1), later, new Set());
+        for (const e of ordered.slice(0, i)) if (e.kind === "Let" || e.kind === "IfLet") later.delete(e.name);   // already bound here
+        this.pending.push(later);
+      }
       const isTail = !!tail && i === ordered.length - 1 && s.kind === "ExprStmt";
-      const ls = isTail ? this.tailExpr((s as { expr: Expr }).expr, depth, tail!) : this.stmt(s, depth);
+      let ls: string[];
+      try { ls = isTail ? this.tailExpr((s as { expr: Expr }).expr, depth, tail!) : this.stmt(s, depth); }
+      finally { if (later) this.pending.pop(); }
       const hoisted = this.hoisted.splice(before);
       out.push(...hoisted.map(l => l === "" ? l : p + l));
       if (s.trailing) { if (ls.length === 1) ls[0] += "  " + this.comment(s.trailing); else ls.push(p + this.comment(s.trailing)); }
@@ -304,9 +315,12 @@ class Py {
     try { return emit(); } finally { this.loopNames.pop(); }
   }
 
-  /** Default-argument captures (`i=i`) for the per-iteration loop names a function body reads. */
+  /** Default-argument captures (`i=i`) for the per-iteration loop names a function body reads, limited to names already bound
+   *  where the def or lambda is emitted. A name bound later is left to late binding, which is correct for it: the checker only
+   *  accepts a call after that binding has run. */
   captures(body: Stmt[], params: string[]): string[] {
     const live = new Set(this.loopNames.flatMap(x => [...x]));
+    for (const later of this.pending) for (const n of later) live.delete(n);   // not bound yet where this is emitted: late binding
     if (!live.size) return [];
     const locals = new Set<string>(), assigned = new Set<string>();   // a name the body declares or assigns is its own, not a capture
     collectNames(body, locals, assigned);

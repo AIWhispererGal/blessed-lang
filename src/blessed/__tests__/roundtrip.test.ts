@@ -145,3 +145,51 @@ loop f in fs {
     expect(lines(py.stdout)).toEqual(want.stdout);
   }, TIMEOUT);
 });
+
+describe.skipIf(!hasPython)("emitted Python: loop captures only names bound before the def is emitted", () => {
+  const run = (name: string, src: string, expected: string[]) => {
+    const want = executeBlessed(src);
+    expect(want.errors).toEqual([]);
+    expect(want.stdout).toEqual(expected);
+    const out = translateBlessedToPython(src);
+    const file = join(dir, `${name}.py`);
+    writeFileSync(file, out);
+    const py = spawnSync("python3", [file], { encoding: "utf8", cwd: dir });
+    expect(py.stderr).toBe("");
+    expect(lines(py.stdout)).toEqual(want.stdout);
+    return out;
+  };
+
+  it("a hoisted fn reading a let declared before its source position but after its emitted one", () => {
+    const out = run("hoistedLaterLet", `loop i in 0..3 {
+    let twice = i * 2
+    print(get())
+    fn get() -> Int {
+        return twice
+    }
+}`, ["0", "2", "4"]);
+    expect(out).toContain("def get() -> int:");
+  }, TIMEOUT);
+
+  it("closures built in a loop still capture the loop variable", () => {
+    const out = run("loopVarClosures", `let fs: List<Fn() -> Int> = []
+loop i in 0..3 {
+    fs = fs.push(fn() { i })
+}
+loop f in fs {
+    print(f())
+}`, ["0", "1", "2"]);
+    expect(out).toContain("lambda i=i: i");
+  }, TIMEOUT);
+
+  it("a hoisted fn reading both the loop variable and a later let", () => {
+    const out = run("hoistedMixed", `loop i in 0..2 {
+    let k = i + 10
+    print(h())
+    fn h() -> Int {
+        return i + k
+    }
+}`, ["10", "12"]);
+    expect(out).toContain("def h(i=i) -> int:");
+  }, TIMEOUT);
+});
