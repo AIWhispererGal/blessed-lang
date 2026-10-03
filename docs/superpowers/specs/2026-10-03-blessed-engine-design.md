@@ -13,7 +13,7 @@ not implemented, runtime type strictness does not exist, and infinite loops
 freeze the browser tab.
 
 This design replaces the regex passes with a real language front end and a
-tree-walking interpreter, and grows the language from ten rules to sixteen so
+tree-walking interpreter, and grows the language from ten rules to eighteen so
 that small real programs can be written in it. The satirical voice of every
 diagnostic is preserved and becomes part of the tested contract.
 
@@ -145,6 +145,51 @@ loop item in items despite errors as e {
   not catchable.
 - There is no try block and no error type hierarchy.
 
+### §17 Infinity, and the Number That Is Not
+
+Float follows IEEE 754 except for one value.
+
+- `Infinity` and `-Infinity` are keywords and legal Float values.
+  `1.0 / 0.0` is `Infinity`. `x < Infinity` is true for every finite x.
+  `Infinity == Infinity` is true.
+- NaN does not exist. Any operation that would produce it fails with a
+  catchable error: `0.0 / 0.0`, `Infinity - Infinity`, `Infinity * 0.0`,
+  `Infinity / Infinity`, `(-4.0).sqrt()`, `(-1.0).log()`, `Int(Infinity)`.
+  Message: "0.0 / 0.0 is not a number. We will not pretend it is."
+- Int has no infinity. `5 / 0` and `5 % 0` fail. Int is a count, and there
+  is no infinite count. `Int(Infinity)` fails for the same reason.
+- `Float("inf")` and `Float("nan")` return null. Infinity is spelled
+  `Infinity` and nothing else is spelled at all.
+
+### §18 Imaginary Numbers Are Real
+
+A `Complex` type with two Float components.
+
+```
+let z = 3 + 4i
+let w = Complex(2.0)          -- 2 + 0i
+print(z.abs())                -- 5
+print(z * w)                  -- 6 + 8i
+print(Complex(-4.0).sqrt())   -- 2i
+```
+
+- Lexing: a numeric literal immediately followed by `i` is an imaginary
+  literal of type Complex (`4i`, `2.5i`, `1i`). Bare `i` remains an
+  ordinary identifier, so loop counters are safe.
+- A literal of the form `<number> + <imaginary>` or `<number> - <imaginary>`
+  is a single Complex literal. Elsewhere, Complex only mixes with Complex:
+  `x + 4i` where `x` is Float is a checker error whose fix-it is
+  `Complex(x) + 4i`. `Complex(v)` accepts Int, Float, or Complex.
+- Operators: `+ - * /`, unary `-`, `==`. Division by `0i` fails. Ordering
+  operators are a checker error: "Complex numbers have no order. Neither
+  does your argument."
+- Properties and methods: `re`, `im`, `abs()`, `arg()`, `conj()`, `sqrt()`,
+  `exp()`, `log()`, `pow(n)`. `sqrt()` returns the principal root.
+- Components follow §17: any component that would become NaN fails.
+- Printing: `3 + 4i`, `3 - 4i`, `4i`, `3 + 0i`, `0i`. Components print like
+  Floats.
+- `Float(z)` fails unless `z.im == 0.0`, with a fix-it suggesting `z.re`.
+
 ### Standard library
 
 Methods on values. No free functions except `print` and the conversions.
@@ -154,11 +199,16 @@ Methods on values. No free functions except `print` and the conversions.
 | String | `length`, `upper()`, `lower()`, `trim()`, `split(sep)`, `contains(s)`, `startsWith(s)`, `endsWith(s)`, `replace(a, b)` |
 | List | `length`, `push(x)` (returns new list), `map(f)`, `filter(f)`, `reduce(f, init)`, `join(sep)`, `contains(x)`, `reverse()`, `sort()` |
 | Map | `keys()`, `values()`, `has(k)` |
-| Int, Float | `abs()`, `floor()`, `round()` |
+| Int | `abs()` |
+| Float | `abs()`, `floor()`, `round()`, `sqrt()`, `pow(n)`, `sin()`, `cos()`, `tan()`, `exp()`, `log()` |
+| Complex | `re`, `im`, `abs()`, `arg()`, `conj()`, `sqrt()`, `exp()`, `log()`, `pow(n)` |
+
+Constants `PI` and `E` are predeclared Floats.
 
 Conversions: `String(x)` works on any value. `Int(s)` and `Float(s)` return
 `Int?` and `Float?` and yield null on unparseable input. `Int(f)` truncates a
-Float. `Float(i)` widens an Int.
+Float and fails on Infinity. `Float(i)` widens an Int. `Complex(x)` accepts
+Int, Float, or Complex.
 
 `length` is a property, not a call. Calling it is a checker error with a
 pointed message.
@@ -171,7 +221,9 @@ pointed message.
   Double underscore both sides is an error. snake_case in a `let` is
   reformatted to camelCase with a warning. All-caps names are constants.
 - Keywords: `let fn record match if else loop in despite errors as return
-  fail with true false null is`.
+  fail with true false null is Infinity`.
+- Numeric literals: `42` Int, `4.2` Float, `4i` and `4.2i` imaginary
+  (Complex). A number followed by whitespace and `i` is not imaginary.
 - Operators by precedence, lowest first: `??`; `or`; `and`; `== != is`;
   `< <= > >=`; `+ -`; `* / %`; unary `- not`; postfix call, index, slice,
   field access. Type names `Int Float String Bool` are also callable for
@@ -229,10 +281,12 @@ exact text. The App shows the text only.
 
 ### Value model (`values.ts`)
 
-Tagged union: `Int`, `Float`, `String`, `Bool`, `Null`, `List`, `Map`,
-`Record`, `Function`. Int and Float are both JavaScript numbers but carry
-different tags and never mix. Int arithmetic: `/` truncates toward zero,
-`/ 0` and `% 0` fail. Float `/ 0.0` fails too; BLESSED has no Infinity.
+Tagged union: `Int`, `Float`, `Complex`, `String`, `Bool`, `Null`, `List`,
+`Map`, `Record`, `Function`. Int and Float are both JavaScript numbers but
+carry different tags and never mix. Int arithmetic: `/` truncates toward
+zero, `/ 0` and `% 0` fail. Float arithmetic follows IEEE 754 with Infinity
+allowed; every Float and Complex operation is checked afterwards and fails
+if any result component is NaN (§17). Complex is a pair of Floats.
 
 Structural equality `==` compares tags first, then contents recursively.
 List order matters, Map order does not, Record compares by type name and
@@ -256,14 +310,15 @@ continues with the next item.
 ### Checker
 
 Single pass with a scope chain, producing a type for every expression.
-Types: the eight value types, `List<T>`, `Map<K, V>`, record types by
+Types: the nine value types, `List<T>`, `Map<K, V>`, record types by
 name, `Fn(A, B) -> R`, `T?`, and `Unknown` for recovery. Rules enforced:
 
 - Undefined names and duplicate declarations in the same scope.
 - `let` without initialiser is an error. Reassignment keeps the declared
   type. Reassigning a constant (all-caps) is an error.
 - Bool-only conditions for `if`, `loop cond`, and guards.
-- No arithmetic or comparison across Int, Float, String, Bool.
+- No arithmetic or comparison across Int, Float, Complex, String, Bool.
+  Ordering operators on Complex are an error.
 - Nullable values may only be used via `??`, `if let`, `== null`,
   `!= null`, `match`, or passed to a parameter typed `T?`.
 - Record field access must name an existing field. Record construction must
@@ -325,7 +380,8 @@ Vitest, run with `npm test`. Layout under `src/blessed/__tests__/`:
 ## 6. App changes
 
 Minimal. `App.tsx` imports examples from `src/blessed/examples.ts`,
-gains six new spec cards for §11 to §16 with verdict badges, gains examples
-for functions, records, maps, match, and errors, and labels the two reverse
+gains eight new spec cards for §11 to §18 with verdict badges, gains examples
+for functions, records, maps, match, errors, and a math example that shows
+Infinity, the NaN refusal, and complex square roots, and labels the two reverse
 translators as best effort. The infinite-loop case gets an example so users
 can see the step budget message.
