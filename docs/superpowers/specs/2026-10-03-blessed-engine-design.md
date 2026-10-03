@@ -68,11 +68,22 @@ let f = greet
   `return` statements; mismatched return types are a checker error.
 - A function whose body is a single expression may omit `return`.
 - Functions are first-class values. No overloading, no default arguments,
-  no variadics.
+  no user-defined variadics; `print` is the exception (one or more
+  arguments, printed separated by a space).
 - Anonymous functions use the same keyword: `fn(x: Int) { x * 2 }`.
-  Parameter types on anonymous functions may be omitted when the checker can
-  infer them from the call site (list element type for `map`, `filter`,
-  `reduce`). Otherwise they are required.
+  Parameter types on anonymous functions may be omitted whenever an `Fn`
+  type is expected where the lambda appears: a declared variable or
+  parameter type, or the list element type for `map`, `filter`, `reduce`.
+  Otherwise they are required.
+- A declared non-nullable return type is a promise: a body that can finish
+  without `return`, `fail`, a trailing expression, or a forever loop is a
+  checker error ("'f' promises Int but can finish without returning one.").
+  An inferred return type includes null (`T?`) when the body can fall off
+  the end.
+- `fn` declarations are visible to their whole block, before their line.
+  A hoisted function's body may only read the block's `let`s declared before
+  the first statement that can run it (its declaration, or an earlier
+  statement that mentions it, directly or through another hoisted function).
 - Recursion is allowed. Depth is limited to 500 frames.
 
 ### §13 Records
@@ -103,6 +114,9 @@ let a = ages["al"]        -- type Int?
 - Lookup of a missing key returns null, so the result type is `V?` and the
   null rules apply. There is no key-not-found error.
 - Maps are mutable: `ages["cy"] = 40` is allowed.
+- A key that is neither Int nor String (reachable through `Unknown` types)
+  fails at runtime with "Map keys are String or Int. ... BLESSED is not going
+  to guess what it hashes to."
 
 ### §15 Match
 
@@ -190,8 +204,8 @@ print(Complex(-4.0).sqrt())   -- 2i
 - Properties and methods: `re`, `im`, `abs()`, `arg()`, `conj()`, `sqrt()`,
   `exp()`, `log()`, `pow(n)`. `sqrt()` returns the principal root.
 - Components follow §17: any component that would become NaN fails.
-- Printing: `3 + 4i`, `3 - 4i`, `4i`, `3 + 0i`, `0i`. Components print like
-  Floats.
+- Printing: `3 + 4i`, `3 - 4i`, `4i`, `3 + 0i`, `0i`. Components print as
+  plain numbers (`3 + 4i`, never `3.0 + 4.0i`), at 15 significant digits.
 - `Float(z)` fails unless `z.im == 0.0`, with a fix-it suggesting `z.re`.
 
 ### §19 Ranges Are Values
@@ -221,9 +235,9 @@ Methods on values. No free functions except `print` and the conversions.
 | Type | Methods |
 |---|---|
 | String | `length`, `upper()`, `lower()`, `trim()`, `split(sep)`, `contains(s)`, `startsWith(s)`, `endsWith(s)`, `replace(a, b)` |
-| List | `length`, `push(x)` (returns new list), `map(f)`, `filter(f)`, `reduce(f, init)`, `join(sep)`, `contains(x)`, `reverse()`, `sort()`, and on `List<Int>` or `List<Float>` only: `sum()`, `min()`, `max()` (the last two return `T?`, null on an empty list) |
+| List | `length`, `push(x)` (returns new list), `map(f)`, `filter(f)`, `reduce(f, init)`, `join(sep)`, `contains(x)`, `reverse()`, `sort()`, and on `List<Int>` or `List<Float>` only: `sum()`, `min()`, `max()` (the last two return `T?`, null on an empty list; `sum()` of an empty list fails: "sum() of nothing is a philosophical question, not a number. Check length first.") |
 | Map | `keys()`, `values()`, `has(k)` |
-| Int | `abs()`, `pow(n)` (n must be a non-negative Int; the checker suggests Float for negative exponents), `gcd(b)`, `factorial()` |
+| Int | `abs()`, `pow(n)` (n must be a non-negative Int of at most 10,000; the checker suggests Float for negative exponents), `gcd(b)`, `factorial()` |
 | Float | `abs()`, `floor()`, `ceil()`, `round()`, `round(digits)`, `sqrt()`, `pow(n)`, `sin()`, `cos()`, `tan()`, `asin()`, `acos()`, `atan()`, `atan2(x)`, `exp()`, `log()` |
 | Complex | `re`, `im`, `abs()`, `arg()`, `conj()`, `sqrt()`, `exp()`, `log()`, `pow(n)` |
 
@@ -243,15 +257,20 @@ pointed message.
   following statement as leading trivia so the formatter can preserve them.
 - Identifiers: `[A-Za-z_][A-Za-z0-9_]*`. Leading underscore is a warning.
   Double underscore both sides is an error. snake_case in a `let` is
-  reformatted to camelCase with a warning. All-caps names are constants.
+  reformatted to camelCase with a warning (the formatter skips a rename onto
+  a name that already exists, with a note). All-caps names of two or more
+  characters are constants; a single capital such as `N` is an ordinary
+  variable.
 - Keywords: `let fn record match if else loop in despite errors as return
   fail with true false null is Infinity`.
 - Numeric literals: `42` Int, `4.2` Float, `4i` and `4.2i` imaginary
   (Complex). A number followed by whitespace and `i` is not imaginary.
 - Operators by precedence, lowest first: `??`; `or`; `and`; `== != is`;
-  `< <= > >=`; `+ -`; `* / %`; unary `- not`; postfix call, index, slice,
-  field access. Type names `Int Float String Bool` are also callable for
-  conversion.
+  `< <= > >=`; `..` (range, a binary operator that does not chain: `a..b..c`
+  is a parse error, `(a..b)..c` parses); `+ -`; `* / %`; unary `- not`;
+  postfix call, index, slice, field access. Type names
+  `Int Float String Complex` are also callable for conversion (there is no
+  `Bool(x)`).
 - String literals use double quotes with `${expr}` interpolation and
   `\n \t \" \\ \$` escapes.
 
@@ -324,8 +343,12 @@ Float, String, Bool, Null, or Function.
 Recursive AST walker with an environment chain. Each statement and each
 loop iteration costs one step. Execution halts after 1,000,000 steps with a
 diagnostic in character. Function call depth above 500 fails as a catchable
-error. `print` appends `String(value)` of its argument to stdout; lists and
-maps print in BLESSED literal syntax, records as `Point(x: 1, y: 2)`.
+error (so does running out of host stack first). `print` takes one or more
+arguments and appends `String(value)` of each, separated by a space, to
+stdout; lists and maps print in BLESSED literal syntax, records as
+`Point(x: 1, y: 2)`. A host JavaScript error that is not a BLESSED error is
+reported as a RuntimeError ("BLESSED hit something it did not expect: ...")
+rather than thrown.
 
 `despite errors` catches catchable errors raised anywhere inside the
 iteration body, including inside called functions, binds the message, and
@@ -365,6 +388,10 @@ checker warns about it separately so the two agree.
 ## 4. Translators
 
 `translate/python.ts` and `translate/typescript.ts` are AST emitters.
+Emitted TypeScript starts with `export {};` so top-level names cannot
+collide with lib.dom globals. Both emitters print through a show helper
+(`blessedShow` / `_show`), emitted only when used, so emitted programs print
+exactly what the interpreter prints.
 
 | BLESSED | Python | TypeScript |
 |---|---|---|
@@ -398,10 +425,13 @@ Vitest, run with `npm test`. Layout under `src/blessed/__tests__/`:
 - `examples.test.ts`: every example and every spec card snippet exported
   from a shared `examples.ts` module that App.tsx also imports, each with
   expected stdout.
-- `translate.test.ts`: emitted Python and TypeScript for every example
-  compared against checked-in golden files; plus a round trip where
-  emitted TypeScript is compiled with the project's tsc and emitted Python
-  is run with python3 when present on PATH, skipped otherwise.
+- `translate.test.ts`: inline exact-string expectations for the emitted
+  Python and TypeScript of each construct (these replaced the planned
+  checked-in golden files).
+- `roundtrip.test.ts`: every runnable example's emitted TypeScript is
+  compiled with the project's tsc (`--strict`) and run with tsx, and its
+  emitted Python is run with python3 when present on PATH (skipped
+  otherwise); both must print exactly the interpreter's stdout.
 
 ## 6. App changes
 

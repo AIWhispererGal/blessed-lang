@@ -67,3 +67,12 @@ interpreter prints (the round-trip tests check every example). Known gaps:
   `if`/`for`/`while` bodies are not. `let x = 2` inside an `if` that shadows an
   outer `x` overwrites the outer one in the emitted Python. Closures made in a
   loop body do keep that iteration's values (they capture by default argument).
+- **`return` inside a nested `match` (Python).** A `match` used inside a
+  larger expression becomes a helper function `_match_N`. A `return`
+  statement inside one of its block arms returns from that helper, not from
+  the enclosing function.
+- **Printing.** Handled: `print`, interpolation, `String()` and `join` go
+  through a show helper (`_show` in Python, `blessedShow` in TypeScript) that
+  renders Int, Float, Bool, null, lists, maps, records and Complex the way the
+  interpreter does. Functions print as `fn name` in both, but an anonymous
+  TypeScript arrow stored in a `let` takes that variable's name.
