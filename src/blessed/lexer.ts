@@ -92,7 +92,10 @@ export function tokenize(source: string): Token[] {
           if (d === "}") { depth--; if (depth === 0) { adv(); break; } }
           inner += adv();
         }
-        const toks = tokenize(inner).map(t => ({ ...t, line: startLine + t.line - 1 }));
+        let toks: Token[];
+        try { toks = tokenize(inner); }
+        catch (e) { if (e instanceof LexError) throw new LexError(startLine + e.line - 1, e.message); throw e; }
+        toks = toks.map(t => ({ ...t, line: startLine + t.line - 1 }));
         parts.push({ kind: "expr", tokens: toks, line: startLine });
         continue;
       }

@@ -61,4 +61,8 @@ describe("lexer", () => {
   it("throws on an unterminated string", () => {
     expect(() => tokenize('"abc')).toThrow(LexError);
   });
+  it("reports the real line for errors inside interpolation", () => {
+    try { tokenize('let x = 1\nlet y = "${ @ }"'); throw new Error("no throw"); }
+    catch (e: any) { expect(e).toBeInstanceOf(LexError); expect(e.line).toBe(2); }
+  });
 });
