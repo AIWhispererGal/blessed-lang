@@ -182,3 +182,23 @@ describe("format then re-run", () => {
     expect(fmt("let t = (p with { x: 3 }) == q\nlet u = (p with { x: 9 }).x")).toBe("let t = (p with { x: 3 }) == q\nlet u = (p with { x: 9 }).x");
   });
 });
+
+describe("formatter and checker agree on renames", () => {
+  it("uses the same camelCase rule as the checker", async () => {
+    const { analyzeBlessed } = await import("../index");
+    for (const [from, to] of [["a_1", "a1"], ["my__var", "myVar"], ["user_Name", "userName"]] as const) {
+      const r = formatSource(`let ${from} = 1\nprint(${from})`);
+      expect(r.formatted).toBe(`let ${to} = 1\nprint(${to})`);
+      expect(r.logs[0]).toContain(`Renamed variable '${from}' to '${to}'`);
+      expect(analyzeBlessed(`let ${from} = 1`).warnings[0]).toContain(`Renamed variable '${from}' to '${to}'`);
+    }
+  });
+  it("skips a rename onto a name that already exists, with a note", () => {
+    const src = "let my_x = 1\nlet myX = 2\nprint(my_x + myX)";
+    const r = formatSource(src);
+    expect(r.formatted).toBe(src);
+    expect(r.logs).toEqual(["Formatter Notice: Would have renamed 'my_x' to 'myX', but 'myX' already exists. BLESSED does not do collisions."]);
+    const f = formatSource("fn myX() -> Int {\n    return 1\n}\nlet my_x = 2\nprint(my_x)");
+    expect(f.formatted).toContain("let my_x = 2");
+  });
+});

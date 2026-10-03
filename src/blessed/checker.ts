@@ -1,6 +1,6 @@
 // src/blessed/checker.ts
 import type { Program, Stmt, Expr, TypeExpr, Pattern, Param } from "./ast";
-import { D, Diagnostic } from "./diagnostics";
+import { D, Diagnostic, camelCaseName } from "./diagnostics";
 import { PROPERTIES, METHODS } from "./stdlib";
 
 export type Type =
@@ -211,7 +211,7 @@ class Checker {
   checkName(line: number, name: string) {
     if (name.startsWith("__") && name.endsWith("__") && name.length > 4) return this.err(line, D.doubleUnderscore());
     if (name.startsWith("_") && name !== "_") this.warn(line, D.leadingUnderscore());
-    else if (name.includes("_") && !isConstName(name)) this.warn(line, D.snakeCase(name, name.replace(/_+([a-zA-Z0-9])/g, (_, l: string) => l.toUpperCase())));
+    else if (name.includes("_") && !isConstName(name)) this.warn(line, D.snakeCase(name, camelCaseName(name)));
     return undefined;
   }
 

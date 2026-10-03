@@ -7,6 +7,11 @@ export function formatDiagnostic(d: Diagnostic): string {
     : `Line ${d.line}: Warning: ${d.message}`;
 }
 
+/** snake_case to camelCase, the one rename the checker suggests and the formatter applies. */
+export function camelCaseName(name: string): string {
+  return name.replace(/_+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
 export const D = {
   // lexer / parser
   unexpectedChar: (c: string) => `Unexpected character '${c}'. BLESSED read the whole alphabet and this was not in it.`,
@@ -61,6 +66,7 @@ export const D = {
   doubleUnderscore: () => `Double underscores on both sides are not a thing. This is Blessed, not Python.`,
   leadingUnderscore: () => `Leading underscores are reserved for the compiler's internal use. Please stick to camelCase.`,
   snakeCase: (from: string, to: string) => `Renamed variable '${from}' to '${to}'. camelCase is the variable convention. You are welcome.`,
+  renameSkipped: (from: string, to: string) => `Would have renamed '${from}' to '${to}', but '${to}' already exists. BLESSED does not do collisions.`,
   semicolon: () => `Formatter will remove this semicolon. Semicolons are optional. Don't think about it.`,
   // runtime
   divByZero: () => `Division by zero. Int is a count and there is no infinite count.`,

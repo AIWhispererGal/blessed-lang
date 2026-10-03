@@ -1,6 +1,6 @@
 import type { Program, Stmt, Expr, TypeExpr, Pattern, Param } from "./ast";
 import { parse } from "./parser";
-import { D, formatDiagnostic } from "./diagnostics";
+import { D, formatDiagnostic, camelCaseName } from "./diagnostics";
 import { showFloatLiteral, plainDecimal } from "./values";
 
 const IND = "    ";
@@ -13,10 +13,23 @@ export function formatSource(code: string): { formatted: string; logs: string[] 
   const renames = new Map<string, string>();
   let semis = 0;
   walkStmts(program.body, s => { if (s.semicolon) semis++; });
+  // every name the program already uses: a rename onto one of them would merge two variables
+  const taken = new Set<string>();
+  walkNames(program, n => { taken.add(n); return n; }, false);
+  const decls = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as { kind?: string; name?: string };
+    if ((n.kind === "FnDecl" || n.kind === "RecordDecl") && n.name) taken.add(n.name);
+    for (const v of Object.values(node)) decls(v);
+  };
+  decls(program.body);
+  const skipped = new Set<string>();
   walkNames(program, (n, decl) => {
-    if (decl && n.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(n) && !n.startsWith("_") && !renames.has(n)) {
-      const to = n.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
-      renames.set(n, to); logs.push(`Formatter Warning: ${D.snakeCase(n, to)}`);
+    if (decl && n.includes("_") && !/^[A-Z][A-Z0-9_]*$/.test(n) && !n.startsWith("_") && !renames.has(n) && !skipped.has(n)) {
+      const to = camelCaseName(n);
+      if (to === n) return n;
+      if (taken.has(to)) { skipped.add(n); logs.push(`Formatter Notice: ${D.renameSkipped(n, to)}`); return n; }
+      renames.set(n, to); taken.add(to); logs.push(`Formatter Warning: ${D.snakeCase(n, to)}`);
     }
     return n;
   }, false);
