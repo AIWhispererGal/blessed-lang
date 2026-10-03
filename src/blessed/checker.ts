@@ -100,10 +100,18 @@ export function check(program: Program): Diagnostic[] {
   return c.diags.sort((a, b) => a.line - b.line);
 }
 
+/** Like check(), and also exposes the type the checker assigned to every expression (translators use it). */
+export function checkWithTypes(program: Program): { diags: Diagnostic[]; typeOf: (e: Expr) => Type } {
+  const c = new Checker();
+  c.block(program.body, c.global);
+  return { diags: c.diags.sort((a, b) => a.line - b.line), typeOf: (e) => c.types.get(e) ?? T.Unknown };
+}
+
 class Checker {
   diags: Diagnostic[] = [];
   records = new Map<string, Map<string, Type>>();
   global = new Scope();
+  types = new WeakMap<Expr, Type>();
 
   constructor() {
     const g = this.global;
@@ -335,7 +343,9 @@ class Checker {
   }
 
   // ---------- expressions
-  expr(e: Expr, scope: Scope, expected?: Type): Type {
+  expr(e: Expr, scope: Scope, expected?: Type): Type { const t = this.exprInner(e, scope, expected); this.types.set(e, t); return t; }
+
+  exprInner(e: Expr, scope: Scope, expected?: Type): Type {
     switch (e.kind) {
       case "IntLit": return T.Int;
       case "FloatLit": return T.Float;
