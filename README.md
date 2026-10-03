@@ -4,7 +4,7 @@ A programming language that made the obvious correct choices. All of them.
 
 BLESSED is a satire with a real interpreter. The playground formats, type-checks,
 and runs BLESSED programs in the browser, translates them to Python and
-TypeScript, and explains its twenty commandments with the confidence they
+TypeScript, and explains its twenty-one commandments with the confidence they
 deserve.
 
 ## Run it
@@ -45,7 +45,7 @@ Notes:
 
 See `docs/superpowers/specs/2026-10-03-blessed-engine-design.md` for the full
 spec, `docs/superpowers/plans/2026-10-03-blessed-engine.md` for the
-implementation plan, and `src/blessed/commandments.ts` for the twenty rules as
+implementation plan, and `src/blessed/commandments.ts` for the twenty-one rules as
 the playground shows them.
 
 ## Layout

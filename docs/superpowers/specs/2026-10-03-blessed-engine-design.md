@@ -13,7 +13,7 @@ not implemented, runtime type strictness does not exist, and infinite loops
 freeze the browser tab.
 
 This design replaces the regex passes with a real language front end and a
-tree-walking interpreter, and grows the language from ten rules to twenty so
+tree-walking interpreter, and grows the language from ten rules to twenty-one so
 that small real programs can be written in it. The satirical voice of every
 diagnostic is preserved and becomes part of the tested contract.
 
@@ -228,6 +228,30 @@ rounds, because that is what Float means. Int literals have no size limit.
 Int `/` truncates toward zero and `%` takes the sign of the dividend, matching
 the existing rule.
 
+### §21 The Order of Things
+
+A variable exists after the line that creates it. Not before. Functions are
+hoisted within their block, so a function may be called above the line that
+declares it. Variables are not hoisted. Therefore a function body may read an
+outer `let` only if that `let` is declared above the earliest statement that
+could run the function: the function's own declaration, or an earlier
+statement that mentions it directly or through another hoisted function.
+
+```
+let count = 3
+
+fn show() -> Int {
+    return count
+}
+
+print(show())
+```
+
+Reordering `let count` below `fn show` is a compile error, even if the only
+call to `show` comes later. The compiler could trace every call path to prove
+the call happens after the `let`. It declines to, because the author already
+knows the order and can type it. Put the `let` above the function.
+
 ### Standard library
 
 Methods on values. No free functions except `print` and the conversions.
@@ -436,7 +460,7 @@ Vitest, run with `npm test`. Layout under `src/blessed/__tests__/`:
 ## 6. App changes
 
 Minimal. `App.tsx` imports examples from `src/blessed/examples.ts`,
-gains ten new spec cards for §11 to §20 with verdict badges, gains examples
+gains eleven new spec cards for §11 to §21 with verdict badges, gains examples
 for functions, records, maps, match, errors, and a math example that shows
 Infinity, the NaN refusal, and complex square roots, and labels the two reverse
 translators as best effort. The infinite-loop case gets an example so users

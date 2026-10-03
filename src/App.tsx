@@ -255,7 +255,7 @@ export default function App() {
               onClick={() => setActiveTab('spec')}
               className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'spec' ? 'bg-amber-600 text-stone-900' : 'text-stone-300 hover:bg-stone-800'}`}
             >
-              The 20 Commandments
+              The 21 Commandments
             </button>
             <button 
               onClick={() => setActiveTab('quiz')}
@@ -607,7 +607,7 @@ export default function App() {
             {/* INTRO */}
             <div className="text-center space-y-4 py-6">
               <span className="text-xs tracking-widest text-amber-500 font-mono uppercase bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">The Specification Document</span>
-              <h2 className="text-3xl font-extrabold text-stone-100">The 20 Commandments of BLESSED</h2>
+              <h2 className="text-3xl font-extrabold text-stone-100">The 21 Commandments of BLESSED</h2>
               <p className="text-stone-400 text-sm max-w-xl mx-auto leading-relaxed">
                 "Every decision in BLESSED was made by asking a single question: what would cause the least suffering, to the most people, for the longest time?"
               </p>

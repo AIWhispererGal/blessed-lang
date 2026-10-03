@@ -20,8 +20,8 @@ describe("examples", () => {
 });
 
 describe("commandments", () => {
-  it("there are exactly twenty, numbered in order", () => {
-    expect(COMMANDMENTS.map(c => c.n)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+  it("there are exactly twenty-one, numbered in order", () => {
+    expect(COMMANDMENTS.map(c => c.n)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
   });
   for (const c of COMMANDMENTS) {
     it(`§${c.n} snippet checks and runs`, () => {

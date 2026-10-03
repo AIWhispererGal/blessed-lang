@@ -68,4 +68,7 @@ export const COMMANDMENTS: Commandment[] = [
   { n: 20, tag: "OVERFLOW IS NOT OUR PROBLEM", title: "Int is arbitrary precision", verdict: "Necessary",
     body: "There is no MAX_INT, no wraparound, no silent precision loss past 2^53. 25.factorial() is exact. Overflow was a hardware limitation. BLESSED declined to inherit it.",
     snippet: `print(2.pow(100))\nprint(25.factorial())\nprint(9007199254740993 + 1)`, example: "strictTypes" },
+  { n: 21, tag: "THE ORDER OF THINGS", title: "A variable exists after the line that creates it. Not before. This is time.", verdict: "Obvious",
+    body: "Functions are hoisted, so you may call one before the line you wrote it on. Variables are not. A function that reads a variable needs that variable declared above the earliest line the function could run. The compiler will not trace every call path to prove you got away with it. You know when the variable exists. You typed it. Put the let above the function. BLESSED considered the clever alternative for four minutes. The declaration goes first.",
+    snippet: `let count = 3\n\nfn show() -> Int {\n    return count\n}\n\nprint(show())`, example: "functions" },
 ];
