@@ -182,3 +182,26 @@ describe("interpreter: hoisting and variadic print", () => {
     expect(fails("print()")).toContain("print takes 1 argument(s), got 0");
   });
 });
+
+describe("interpreter: no raw JS errors escape", () => {
+  it("a host stack overflow is the recursion limit, catchable by despite", () => {
+    const r = exec("fn f(n: Int) -> Int {\n    return f(n + 1) + 1\n}\nloop x in [1] despite errors as e {\n    print(f(0))\n}\nprint(e ?? \"none\")", { depthLimit: 1e9 });
+    expect(r.error).toBeUndefined();
+    expect(r.stdout).toEqual(["Call depth exceeded 500. The function called itself more times than anyone has called you."]);
+  });
+  it("any other host error becomes an internal RuntimeError, not a throw", () => {
+    const program = { body: [{ kind: "ExprStmt", expr: { kind: "Unary", op: "-", expr: null }, span: { line: 1 }, leading: [], blankBefore: 0 }], trailingComments: [] } as any;
+    const r = run(program);
+    expect(r.error).toMatch(/^RuntimeError: BLESSED hit something it did not expect: .+\. This is our fault, not yours\. Probably\.$/);
+  });
+  it("Int.pow exponents are capped at 10,000 (catchable)", () => {
+    expect(out("print(2.pow(10000) > 0)")).toEqual(["true"]);
+    expect(fails("print(2.pow(10001))")).toContain("exponent over 10,000");
+    expect(out("loop x in [1] despite errors as e {\n    print(2.pow(100000))\n}\nprint(e ?? \"none\")")[0]).toContain("exponent over 10,000");
+  });
+  it("int() of NaN or Infinity is a BlessedError, not a RangeError", async () => {
+    const { int, BlessedError } = await import("../values");
+    expect(() => int(NaN)).toThrow(BlessedError);
+    expect(() => int(Infinity)).toThrow("Int(Infinity) is not a count");
+  });
+});

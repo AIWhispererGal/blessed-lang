@@ -15,7 +15,7 @@ export function run(program: Program, opts: { stepBudget?: number; depthLimit?: 
   } catch (e) {
     if (e instanceof BlessedError || e instanceof BudgetError) return { stdout: interp.stdout, error: `RuntimeError: ${e.message}`, steps: interp.steps };
     if (e instanceof ReturnSignal) return { stdout: interp.stdout, error: `RuntimeError: ${D.returnOutsideFn()}`, steps: interp.steps };
-    throw e;
+    return { stdout: interp.stdout, error: `RuntimeError: ${D.internalError(e instanceof Error ? e.message : String(e))}`, steps: interp.steps };
   }
 }
 
@@ -260,7 +260,12 @@ export class Interpreter {
     const env = new Env(f.env);
     f.params.forEach((p, i) => env.define(p.name, args[i]));
     try { return this.evalBlockValue(f.body, env); }
-    catch (e) { if (e instanceof ReturnSignal) return e.value; throw e; }
+    catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      // the host stack ran out before the depth limit did: still a recursion limit, still catchable by `despite`
+      if (e instanceof RangeError && e.message.includes("call stack")) throw new BlessedError(D.recursionLimit());
+      throw e;
+    }
     finally { this.depth--; }
   }
 

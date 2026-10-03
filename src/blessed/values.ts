@@ -28,7 +28,10 @@ export class Env {
 export const NULL: Value = { t: "Null" };
 export const TRUE: Value = { t: "Bool", v: true };
 export const FALSE: Value = { t: "Bool", v: false };
-export const int = (v: bigint | number): Value => ({ t: "Int", v: typeof v === "bigint" ? v : BigInt(Math.trunc(v)) });
+export const int = (v: bigint | number): Value => {
+  if (typeof v === "number" && !Number.isFinite(v)) throw new BlessedError(D.intFromInfinity());
+  return { t: "Int", v: typeof v === "bigint" ? v : BigInt(Math.trunc(v)) };
+};
 export const float = (v: number): Value => ({ t: "Float", v });
 export const str = (v: string): Value => ({ t: "String", v });
 export const bool = (v: boolean): Value => (v ? TRUE : FALSE);

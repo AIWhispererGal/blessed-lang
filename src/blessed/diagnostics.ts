@@ -74,6 +74,8 @@ export const D = {
   runtimeUnary: (op: string, t: string) => `cannot apply '${op}' to ${t} at runtime. The type was only knowable now, and now we know.`,
   notBoolRuntime: (t: string) => `Condition is ${t}, not Bool. BLESSED is not interested in truthy/falsy load-bearing conventions that were always wrong. Please make it explicit.`,
   intFromInfinity: () => `Int(Infinity) is not a count. There is no infinite count.`,
+  powTooBig: () => `Int.pow() with an exponent over 10,000 builds a number nobody will ever read. BLESSED declines on everyone's behalf.`,
+  internalError: (m: string) => `BLESSED hit something it did not expect: ${m}. This is our fault, not yours. Probably.`,
   emptySum: () => `sum() of nothing is a philosophical question, not a number. Check length first.`,
   floatFromComplex: () => `Float(z) only works when z.im == 0.0. Did you mean z.re?`,
   // formatter

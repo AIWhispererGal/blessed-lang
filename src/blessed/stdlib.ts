@@ -127,7 +127,7 @@ export function callMethod(interp: Interpreter, v: Value, name: string, args: Va
       const n = v.v;
       switch (name) {
         case "abs": return int(n < 0n ? -n : n);
-        case "pow": { const e = argOf(args, 0, "Int", name).v as bigint; if (e < 0n) throw new BlessedError(D.negativeIntPow()); return int(n ** e); }
+        case "pow": { const e = argOf(args, 0, "Int", name).v as bigint; if (e < 0n) throw new BlessedError(D.negativeIntPow()); if (e > 10_000n) throw new BlessedError(D.powTooBig()); return int(n ** e); }
         case "gcd": { let a = n < 0n ? -n : n, b = argOf(args, 0, "Int", name).v as bigint; b = b < 0n ? -b : b; while (b) { [a, b] = [b, a % b]; } return int(a); }
         case "factorial": { if (n < 0n) throw new BlessedError(D.notANumber(`${n}.factorial()`)); let r = 1n; for (let i = 2n; i <= n; i++) r *= i; return int(r); }
       }
