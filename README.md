@@ -48,6 +48,50 @@ spec, `docs/superpowers/plans/2026-10-03-blessed-engine.md` for the
 implementation plan, and `src/blessed/commandments.ts` for the twenty-one rules as
 the playground shows them.
 
+## Proposing a commandment
+
+BLESSED has twenty-one commandments because that is how many obvious correct
+choices we have found so far. If you have found another, open an issue or a
+pull request. The bar is the one every existing commandment cleared:
+
+1. **Name the suffering.** What do other languages do here, and who does it
+   hurt? "I prefer it" is a preference. A commandment removes a wound.
+2. **State the rule in one sentence.** If it needs a paragraph, it is two
+   rules or none.
+3. **Pick the verdict.** Obvious, Sensible, Correct, Overdue, or Necessary.
+   Be honest. Most things are Sensible.
+4. **Write the snippet.** It has to parse, check with zero errors, and run.
+   The test suite enforces this for every card.
+5. **Say what it costs.** Every rule rejects some program somebody wanted to
+   write. Name that program and explain why they are better off.
+
+A pull request for a commandment touches four places: a `D` message in
+`src/blessed/diagnostics.ts` if the compiler gains something to say, the rule
+itself in the checker or interpreter with tests, a card in
+`src/blessed/commandments.ts`, and a `§N` section in the spec. Keep the
+compiler's voice: short sentences, no hedging, and a joke only if it is also
+true.
+
+## Building on BLESSED
+
+The engine is plain TypeScript with no runtime dependencies, and each stage
+is a module with one job (see Layout). `src/blessed/index.ts` is the public
+surface. Things people have asked about:
+
+- **A standard library module.** Methods live in `src/blessed/stdlib.ts` as
+  one switch per type, and the checker reads the same `METHODS` table for
+  arity. Add the method in both places and a test in `stdlib.test.ts`.
+- **A new translation target.** Copy the shape of
+  `src/blessed/translate/typescript.ts`: walk the AST, emit text, use
+  `checkWithTypes` for types, gate any prelude on use. Add the target to the
+  round-trip test so its output is compiled and run against the interpreter.
+- **An editor or CLI.** Everything you need is `parse`, `check`, `run`, and
+  `formatSource`. There is no CLI yet. Someone should write one in BLESSED's
+  voice.
+
+Run `npm test` before you open the pull request. 377 tests pass today, and
+the number should only go up.
+
 ## Layout
 
     src/blessed/lexer.ts        source -> tokens
