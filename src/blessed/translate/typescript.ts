@@ -79,7 +79,8 @@ export function emitTypeScript(p: Program): string {
   const body = em.stmts(p.body, 0);
   const pre = PRELUDE_ORDER.filter(k => em.uses.has(k)).map(k => PRELUDE[k]);
   const lines = [...(pre.length ? [pre.join("\n\n"), ""] : []), ...body, ...p.trailingComments.map(c => em.comment(c))];
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  // `export {}` makes the file a module, so top-level names cannot collide with lib.dom globals (`name`, `status`, `close`)
+  return ("export {};\n" + lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()).trim();
 }
 
 /** Does this statement run user-defined code (so a function or record it uses must already exist)? */
@@ -165,8 +166,8 @@ class Ts {
         if (!s.despite) return [head, ...block(depth + 1), `${p}}`];
         const name = s.despite.errName;
         const pre = name ? [`${p}let ${name}: string | null = null;`] : [];
-        const bind = name ? [`${p}${IND}${IND}${name} = err instanceof Error ? err.message : String(err);`] : [];
-        return [...pre, head, `${p}${IND}try {`, ...block(depth + 2), `${p}${IND}} catch (err) {`, ...bind, `${p}${IND}}`, `${p}}`];
+        const bind = name ? [`${p}${IND}${IND}${name} = _blessedErr instanceof Error ? _blessedErr.message : String(_blessedErr);`] : [];
+        return [...pre, head, `${p}${IND}try {`, ...block(depth + 2), `${p}${IND}} catch (_blessedErr) {`   /* not `err`: that is a BLESSED name a program may use */, ...bind, `${p}${IND}}`, `${p}}`];
       }
       case "FnDecl": {
         const ps = s.params.map(x => `${x.name}: ${x.type ? this.type(x.type) : "any"}`).join(", ");
