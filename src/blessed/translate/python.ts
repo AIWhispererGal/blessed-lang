@@ -35,6 +35,12 @@ export function emitPython(p: Program): string {
     `${IND}q = abs(a) // abs(b)`, `${IND}return q if (a >= 0) == (b >= 0) else -q`, "",
     "def _bmod(a, b):", `${IND}if b == 0:`, `${IND}${IND}raise ZeroDivisionError(${JSON.stringify(D.divByZero())})`,
     `${IND}return a - b * _bdiv(a, b)`, "");
+  if (em.uses.has("fdiv")) lines.push(
+    "def _fdiv(a, b):", `${IND}if b == 0.0:`, `${IND}${IND}if a == 0.0:`,
+    `${IND}${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("0.0 / 0.0"))})`,
+    `${IND}${IND}return math.inf if (a > 0) == (math.copysign(1.0, b) > 0) else -math.inf`, `${IND}return a / b`, "");
+  if (em.uses.has("fcheck")) lines.push(
+    "def _fcheck(x):", `${IND}if math.isnan(x):`, `${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("result"))})`, `${IND}return x`, "");
   if (em.uses.has("bint")) lines.push(
     "def _bint(s):", `${IND}s = s.strip()`, `${IND}return int(s) if re.fullmatch(r"-?[0-9]+", s) else None`, "");
   if (em.uses.has("bfloat")) lines.push(
@@ -330,7 +336,7 @@ class Py {
       case "StrLit": return this.str(e.parts);
       case "BoolLit": return e.value ? "True" : "False";
       case "NullLit": return "None";
-      case "Ident": return e.name;
+      case "Ident": if ((e.name === "PI" || e.name === "E") && this.typeOf(e).k === "Float") { this.uses.add("math"); return e.name === "PI" ? "math.pi" : "math.e"; } return e.name;
       case "ListLit": return `[${e.items.map(x => this.expr(x)).join(", ")}]`;
       case "MapLit": return `{${e.entries.map(en => `${this.expr(en.key)}: ${this.expr(en.value)}`).join(", ")}}`;
       case "Range": return `list(range(${this.expr(e.start)}, ${this.expr(e.end)}))`;
@@ -379,6 +385,15 @@ class Py {
     if ((e.op === "/" || e.op === "%") && this.kind(e) === "Int") {
       this.uses.add("bdiv");
       return `${e.op === "/" ? "_bdiv" : "_bmod"}(${this.expr(e.left)}, ${this.expr(e.right)})`;
+    }
+    if (e.op === "/" && this.kind(e) === "Float") {
+      this.uses.add("fdiv"); this.uses.add("math");
+      return `_fdiv(${this.expr(e.left)}, ${this.expr(e.right)})`;
+    }
+    if ((e.op === "+" || e.op === "-" || e.op === "*") && this.kind(e) === "Float"
+      && !(e.left.kind === "FloatLit" && e.right.kind === "FloatLit" && Number.isFinite(e.left.value) && Number.isFinite(e.right.value))) {
+      this.uses.add("fcheck"); this.uses.add("math");   // Infinity - Infinity and Infinity * 0.0 would be NaN
+      return `_fcheck(${this.expr(e.left, prec)} ${e.op} ${this.expr(e.right, prec + 1)})`;
     }
     if (e.op === "%" && this.kind(e) === "Float") { this.uses.add("math"); return `math.fmod(${this.expr(e.left)}, ${this.expr(e.right)})`; }   // sign of the dividend, like BLESSED
     return paren(`${this.expr(e.left, prec)} ${e.op} ${this.expr(e.right, prec + 1)}`, prec);
