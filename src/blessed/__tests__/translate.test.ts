@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parser";
 import { emitPython } from "../translate/python";
-import { translateBlessedToPython } from "../index";
+import { emitTypeScript } from "../translate/typescript";
+import { translateBlessedToPython, translateBlessedToTypeScript } from "../index";
 
 const py = (src: string) => { const { program, errors } = parse(src); expect(errors).toEqual([]); return emitPython(program); };
 
@@ -93,5 +94,60 @@ describe("python emitter", () => {
 describe("translateBlessedToPython", () => {
   it("reports parse errors as Python comments", () => {
     expect(translateBlessedToPython("a === b")).toMatch(/^# Line 1: CompileError:/);
+  });
+});
+
+const ts = (src: string) => { const { program, errors } = parse(src); expect(errors).toEqual([]); return emitTypeScript(program); };
+
+describe("typescript emitter", () => {
+  it("hello world", () => {
+    expect(ts('-- hello.blessed\nlet recipients = ["World", "Nurse"]\n\nloop r in recipients {\n    print("Hello, ${r}!")\n}')).toBe(
+      '// hello.blessed\nlet recipients = ["World", "Nurse"];\n\nfor (const r of recipients) {\n    console.log(`Hello, ${r}!`);\n}');
+  });
+  it("types, Int as bigint, nullable, ??, if let", () => {
+    expect(ts('let n: String? = null\nlet k: Int = 5\nprint(n ?? "x")\nif let v = n {\n    print(v)\n}')).toBe(
+      'let n: string | null = null;\nlet k: bigint = 5n;\nconsole.log(n ?? "x");\n{\n    const v = n;\n    if (v !== null) {\n        console.log(v);\n    }\n}');
+  });
+  it("structural equality uses a helper; is uses ===", () => {
+    expect(ts("let a = [1]\nprint(a == [1], a is a)")).toBe(
+      'function blessedEq(a: unknown, b: unknown): boolean {\n    if (a === b) return true;\n    if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;\n    if (Array.isArray(a) !== Array.isArray(b)) return false;\n    if (a instanceof Map && b instanceof Map) return a.size === b.size && [...a].every(([k, v]) => b.has(k) && blessedEq(v, b.get(k)));\n    const ka = Object.keys(a as object), kb = Object.keys(b as object);\n    return ka.length === kb.length && ka.every(k => blessedEq((a as any)[k], (b as any)[k]));\n}\n\nlet a = [1n];\nconsole.log(blessedEq(a, [1n]), a === a);');
+  });
+  it("loops, despite errors, fail, if chain, Int division", () => {
+    expect(ts('let i = 0\nloop i < 2 {\n    i = i + 1\n}\nloop x in [1, 2] despite errors as e {\n    if x == 2 {\n        fail "two"\n    } else if x == 1 {\n        print(7 / x)\n    } else {\n        print("no")\n    }\n}')).toBe(
+      'function blessedDiv(a: bigint, b: bigint): bigint {\n    if (b === 0n) throw new Error("Division by zero. Int is a count and there is no infinite count.");\n    return a / b;\n}\n\nlet i = 0n;\nwhile (i < 2n) {\n    i = i + 1n;\n}\nlet e: string | null = null;\nfor (const x of [1n, 2n]) {\n    try {\n        if (x === 2n) {\n            throw new Error("two");\n        } else if (x === 1n) {\n            console.log(blessedDiv(7n, x));\n        } else {\n            console.log("no");\n        }\n    } catch (err) {\n        e = err instanceof Error ? err.message : String(err);\n    }\n}');
+  });
+  it("functions, records, with, match, ranges, complex", () => {
+    const src = 'record Point { x: Int, y: Int }\nfn norm(p: Point) -> Int {\n    return p.x * p.x + p.y * p.y\n}\nlet p = Point(x: 3, y: 4)\nlet q = p with { x: 0 }\nlet label = match norm(p) {\n    25 -> "five"\n    n if n > 100 -> "big"\n    _ -> "other"\n}\nprint(match q {\n    Point(x: 0, y: yy) -> "axis ${yy}"\n    _ -> "off"\n})\nloop i in 0..3 {\n    print(i)\n}\nlet z = 3 + 4i\nprint(z.abs(), Infinity, (2.0).sqrt(), [3, 1].sort(), "a,b".split(",").length)';
+    expect(ts(src)).toBe(
+      'function blessedRange(a: bigint, b: bigint): bigint[] {\n    const out: bigint[] = [];\n    for (let i = a; i < b; i++) out.push(i);\n    return out;\n}\n\nclass Complex {\n    constructor(public re: number, public im: number) {}\n    add(o: Complex) { return new Complex(this.re + o.re, this.im + o.im); }\n    sub(o: Complex) { return new Complex(this.re - o.re, this.im - o.im); }\n    mul(o: Complex) { return new Complex(this.re * o.re - this.im * o.im, this.re * o.im + this.im * o.re); }\n    div(o: Complex) { const d = o.re * o.re + o.im * o.im; if (d === 0) throw new Error("Division by zero. Int is a count and there is no infinite count."); return new Complex((this.re * o.re + this.im * o.im) / d, (this.im * o.re - this.re * o.im) / d); }\n    abs() { return Math.hypot(this.re, this.im); }\n    arg() { return Math.atan2(this.im, this.re); }\n    conj() { return new Complex(this.re, -this.im); }\n    sqrt() { const r = Math.sqrt(this.abs()), t = this.arg() / 2; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    exp() { const m = Math.exp(this.re); return new Complex(m * Math.cos(this.im), m * Math.sin(this.im)); }\n    log() { return new Complex(Math.log(this.abs()), this.arg()); }\n    pow(n: number | bigint) { const k = Number(n), r = this.abs() ** k, t = this.arg() * k; return new Complex(r * Math.cos(t), r * Math.sin(t)); }\n    toString() { return this.re === 0 ? `${this.im}i` : `${this.re} ${this.im < 0 ? "-" : "+"} ${Math.abs(this.im)}i`; }\n}\n\ninterface Point { x: bigint; y: bigint }\nconst Point = (f: Point): Point => ({ ...f });\n\nfunction norm(p: Point): bigint {\n    return p.x * p.x + p.y * p.y;\n}\n\nlet p = Point({ x: 3n, y: 4n });\nlet q = { ...p, x: 0n };\nlet label = ((_s) => {\n    if (_s === 25n) return "five";\n    { const n = _s; if (n > 100n) return "big"; }\n    return "other";\n})(norm(p));\nconsole.log(((_s) => {\n    if (_s.x === 0n) { const yy = _s.y; return `axis ${yy}`; }\n    return "off";\n})(q));\nfor (const i of blessedRange(0n, 3n)) {\n    console.log(i);\n}\nlet z = new Complex(3, 4);\nconsole.log(z.abs(), Infinity, Math.sqrt(2.0), [...[3n, 1n]].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)), BigInt("a,b".split(",").length));');
+  });
+});
+
+describe("translateBlessedToTypeScript", () => {
+  it("reports parse errors as TypeScript comments", () => {
+    expect(translateBlessedToTypeScript("a === b")).toMatch(/^\/\/ Line 1: CompileError:/);
+  });
+});
+
+describe("typescript emitter: indexing, ordering, comments", () => {
+  const AT = 'function blessedAt<T>(xs: ArrayLike<T>, i: bigint): T {\n    const n = Number(i), j = n < 0 ? xs.length + n : n;\n    if (j < 0 || j >= xs.length) throw new Error(`Index ${i} is out of range for a list of length ${xs.length}. Offsets have edges.`);\n    return xs[j];\n}\n\n';
+  const CHECK = 'function blessedCheck(x: number): number {\n    if (Number.isNaN(x)) throw new Error("Result is not a number. We will not pretend it is.");\n    return x;\n}\n\n';
+  it("list reads are checked (lib es2020 has no .at); stores and map lookups are not", () => {
+    expect(ts('let xs = [1, 2]\nxs[0] = 5\nlet m = {"a": 1}\nm["b"] = 2\nprint(xs[-1], m["a"] ?? 0)')).toBe(
+      AT + 'let xs = [1n, 2n];\nxs[Number(0n)] = 5n;\nlet m = new Map([["a", 1n]]);\nm.set("b", 2n);\nconsole.log(blessedAt(xs, -1n), (m.get("a") ?? null) ?? 0n);');
+  });
+  it("declarations used before they appear move to the top (record factories are consts)", () => {
+    expect(ts("print(sq(3))\nfn sq(n: Int) -> Int {\n    n * n\n}")).toBe("function sq(n: bigint): bigint {\n    return n * n;\n}\n\nconsole.log(sq(3n));");
+  });
+  it("?? never mixes with || unparenthesized", () => {
+    expect(ts("let a: Bool? = null\nlet b = true\nprint(b or a ?? false)")).toBe("let a: boolean | null = null;\nlet b = true;\nconsole.log((b || a) ?? false);");
+  });
+  it("comments in empty blocks, after the last statement, and trailing", () => {
+    expect(ts("fn f() {\n    -- nothing yet\n}\nloop {\n    print(1)\n    -- after\n}\nprint(2) -- trailing")).toBe(
+      "function f() {\n    // nothing yet\n}\n\nwhile (true) {\n    console.log(1n);\n    // after\n}\nconsole.log(2n); // trailing");
+  });
+  it("untyped lambdas get any unless a typed parameter gives context; NaN-capable math is checked", () => {
+    expect(ts("let g = fn(x) { x }\nprint([1].map(fn(x) { x + 1 }), (-4.0).sqrt(), (4.0).sqrt())")).toBe(
+      CHECK + "let g = (x: any) => x;\nconsole.log([1n].map((x) => x + 1n), blessedCheck(Math.sqrt(-4.0)), Math.sqrt(4.0));");
   });
 });
