@@ -35,12 +35,15 @@ export function emitPython(p: Program): string {
     `${IND}q = abs(a) // abs(b)`, `${IND}return q if (a >= 0) == (b >= 0) else -q`, "",
     "def _bmod(a, b):", `${IND}if b == 0:`, `${IND}${IND}raise ZeroDivisionError(${JSON.stringify(D.divByZero())})`,
     `${IND}return a - b * _bdiv(a, b)`, "");
+  if (em.uses.has("fcheck")) lines.push(
+    "def _fcheck(x):", `${IND}if math.isnan(x):`, `${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("result"))})`, `${IND}return x`, "");
   if (em.uses.has("fdiv")) lines.push(
     "def _fdiv(a, b):", `${IND}if b == 0.0:`, `${IND}${IND}if a == 0.0:`,
     `${IND}${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("0.0 / 0.0"))})`,
-    `${IND}${IND}return math.inf if (a > 0) == (math.copysign(1.0, b) > 0) else -math.inf`, `${IND}return a / b`, "");
-  if (em.uses.has("fcheck")) lines.push(
-    "def _fcheck(x):", `${IND}if math.isnan(x):`, `${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("result"))})`, `${IND}return x`, "");
+    `${IND}${IND}return math.inf if (a > 0) == (math.copysign(1.0, b) > 0) else -math.inf`, `${IND}return _fcheck(a / b)`, "");
+  if (em.uses.has("fmod")) lines.push(
+    "def _fmod(a, b):", `${IND}if b == 0.0 or math.isinf(a) or math.isinf(b):`,
+    `${IND}${IND}raise ArithmeticError(${JSON.stringify(D.notANumber("result"))})`, `${IND}return math.fmod(a, b)`, "");
   if (em.uses.has("bint")) lines.push(
     "def _bint(s):", `${IND}s = s.strip()`, `${IND}return int(s) if re.fullmatch(r"-?[0-9]+", s) else None`, "");
   if (em.uses.has("bfloat")) lines.push(
@@ -387,7 +390,7 @@ class Py {
       return `${e.op === "/" ? "_bdiv" : "_bmod"}(${this.expr(e.left)}, ${this.expr(e.right)})`;
     }
     if (e.op === "/" && this.kind(e) === "Float") {
-      this.uses.add("fdiv"); this.uses.add("math");
+      this.uses.add("fdiv"); this.uses.add("fcheck"); this.uses.add("math");
       return `_fdiv(${this.expr(e.left)}, ${this.expr(e.right)})`;
     }
     if ((e.op === "+" || e.op === "-" || e.op === "*") && this.kind(e) === "Float"
@@ -395,7 +398,7 @@ class Py {
       this.uses.add("fcheck"); this.uses.add("math");   // Infinity - Infinity and Infinity * 0.0 would be NaN
       return `_fcheck(${this.expr(e.left, prec)} ${e.op} ${this.expr(e.right, prec + 1)})`;
     }
-    if (e.op === "%" && this.kind(e) === "Float") { this.uses.add("math"); return `math.fmod(${this.expr(e.left)}, ${this.expr(e.right)})`; }   // sign of the dividend, like BLESSED
+    if (e.op === "%" && this.kind(e) === "Float") { this.uses.add("fmod"); this.uses.add("math"); return `_fmod(${this.expr(e.left)}, ${this.expr(e.right)})`; }   // sign of the dividend, like BLESSED
     return paren(`${this.expr(e.left, prec)} ${e.op} ${this.expr(e.right, prec + 1)}`, prec);
   }
 

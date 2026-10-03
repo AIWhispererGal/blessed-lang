@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import { execSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EXAMPLES } from "../examples";
@@ -10,6 +10,7 @@ const has = (cmd: string) => { try { execSync(`${cmd} --version`, { stdio: "igno
 const hasPython = has("python3");
 // Temp dir lives outside the repo; tools run with cwd there so repo @types are not loaded.
 const dir = mkdtempSync(join(tmpdir(), "blessed-rt-"));
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const bin = (name: string) => resolve(process.cwd(), "node_modules/.bin", name);
 const runnable = Object.entries(EXAMPLES).filter(([k]) => k !== "budget");
 const TIMEOUT = 120_000;

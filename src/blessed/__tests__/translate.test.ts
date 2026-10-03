@@ -8,7 +8,9 @@ const py = (src: string) => { const { program, errors } = parse(src); expect(err
 
 const BDIV = 'def _bdiv(a, b):\n    if b == 0:\n        raise ZeroDivisionError("Division by zero. Int is a count and there is no infinite count.")\n    q = abs(a) // abs(b)\n    return q if (a >= 0) == (b >= 0) else -q\n\ndef _bmod(a, b):\n    if b == 0:\n        raise ZeroDivisionError("Division by zero. Int is a count and there is no infinite count.")\n    return a - b * _bdiv(a, b)\n\n';
 
-const FDIV = 'import math\n\ndef _fdiv(a, b):\n    if b == 0.0:\n        if a == 0.0:\n            raise ArithmeticError("0.0 / 0.0 is not a number. We will not pretend it is.")\n        return math.inf if (a > 0) == (math.copysign(1.0, b) > 0) else -math.inf\n    return a / b\n\n';
+const FCHECK = 'def _fcheck(x):\n    if math.isnan(x):\n        raise ArithmeticError("result is not a number. We will not pretend it is.")\n    return x\n\n';
+const FMOD = 'import math\n\ndef _fmod(a, b):\n    if b == 0.0 or math.isinf(a) or math.isinf(b):\n        raise ArithmeticError("result is not a number. We will not pretend it is.")\n    return math.fmod(a, b)\n\n';
+const FDIV = 'import math\n\n' + FCHECK + 'def _fdiv(a, b):\n    if b == 0.0:\n        if a == 0.0:\n            raise ArithmeticError("0.0 / 0.0 is not a number. We will not pretend it is.")\n        return math.inf if (a > 0) == (math.copysign(1.0, b) > 0) else -math.inf\n    return _fcheck(a / b)\n\n';
 
 describe("python emitter", () => {
   it("hello world", () => {
@@ -34,6 +36,10 @@ describe("python emitter", () => {
     const sub = py("let i = Infinity\nprint(i - i)");
     expect(sub).toContain("def _fcheck(x):");
     expect(sub).toContain("_fcheck(i - i)");
+    expect(out).toContain("return _fcheck(a / b)");
+    const fm = py("let a = 7.5\nprint(a % 2.0)");
+    expect(fm).toContain("def _fmod(a, b):");
+    expect(fm).toContain("_fmod(a, 2.0)");
     expect(py("print(PI)")).toBe("import math\n\nprint(math.pi)");
   });
   it("functions, lambdas, records, with, match", () => {
@@ -50,7 +56,7 @@ describe("python emitter", () => {
   it("Int vs Float division is decided by checker types, not names", () => {
     expect(py("let a = 7\nlet b = 2\nprint(a / b)")).toBe(BDIV + "a = 7\nb = 2\nprint(_bdiv(a, b))");
     expect(py("let a = 7.0\nlet b = 2.0\nprint(a / b)")).toBe(FDIV + "a = 7.0\nb = 2.0\nprint(_fdiv(a, b))");
-    expect(py("let a = 7.5\nprint(a % 2.0)")).toBe("import math\n\na = 7.5\nprint(math.fmod(a, 2.0))");
+    expect(py("let a = 7.5\nprint(a % 2.0)")).toBe(FMOD + "a = 7.5\nprint(_fmod(a, 2.0))");
   });
   it("map lookups use .get() by type; list indexing does not", () => {
     expect(py('let scores = {"a": 1}\nlet xs = [1]\nprint(scores["a"] ?? 0, xs[0])')).toBe(
