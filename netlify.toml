@@ -1,0 +1,23 @@
+# BLESSED on Netlify.
+# The build is one self-contained HTML file (vite-plugin-singlefile), so the
+# publish directory holds exactly one thing and there is nothing to configure.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: every path resolves to the playground.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"

@@ -1,1 +1,156 @@
 @import "tailwindcss";
+
+/* BLESSED has one theme per time of day. Both are parchment and gilt. */
+:root {
+  --bg: #f3ebd9;
+  --surface: #fbf6ea;
+  --surface-2: #efe5cf;
+  --border: #dccfb3;
+  --border-strong: #bda986;
+  --text: #221c14;
+  --muted: #6a5e4c;
+  --faint: #9b8e78;
+  --gold: #8a5a12;
+  --gold-bright: #b1731a;
+  --gold-ink: #fbf6ea;
+  --ok: #2f6f3e;
+  --warn: #8d6307;
+  --err: #a8352b;
+  --info: #2d5f8a;
+  --code-bg: #f8f2e2;
+  --glow: rgba(138, 90, 18, 0.14);
+  --shadow: 0 1px 2px rgb(40 30 10 / 0.06), 0 16px 40px -20px rgb(40 30 10 / 0.3);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e0c09;
+  --surface: #16120e;
+  --surface-2: #1d1812;
+  --border: #2b241b;
+  --border-strong: #41372a;
+  --text: #efe6d4;
+  --muted: #a89b85;
+  --faint: #6e6252;
+  --gold: #e0b35a;
+  --gold-bright: #f2c86e;
+  --gold-ink: #1a1408;
+  --ok: #86d196;
+  --warn: #e6b94a;
+  --err: #ff8f80;
+  --info: #93c5ee;
+  --code-bg: #0b0907;
+  --glow: rgba(224, 179, 90, 0.16);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 24px 60px -24px rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-gold-ink: var(--gold-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+  --color-code: var(--code-bg);
+
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --shadow-card: var(--shadow);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: color-mix(in oklab, var(--gold) 35%, transparent);
+}
+
+textarea,
+pre,
+code,
+kbd {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  tab-size: 4;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 144;
+}
+
+/* A warm glow behind the hero, like a candle behind a page. */
+.hero-glow {
+  background:
+    radial-gradient(55% 45% at 50% -5%, var(--glow), transparent 70%),
+    radial-gradient(30% 30% at 90% 20%, color-mix(in oklab, var(--glow) 60%, transparent), transparent 70%);
+}
+
+/* The gold rule that separates sections. */
+.rule-gold {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent);
+  opacity: 0.55;
+}
+
+/* Illuminated initial on commandment bodies. */
+.dropcap::first-letter {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 3.1em;
+  line-height: 0.8;
+  float: left;
+  margin: 0.08em 0.12em 0 0;
+  color: var(--gold);
+}
+
+/* Quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.fade-up {
+  animation: fade-up 0.5s ease-out both;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
