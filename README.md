@@ -2,6 +2,9 @@
 
 A programming language that made the obvious correct choices. All of them.
 
+**Playground:** https://blessed-lang.netlify.app
+[![Netlify Status](https://api.netlify.com/api/v1/badges/5c252606-ba19-4bfe-a06c-8f375bb0a7d5/deploy-status)](https://app.netlify.com/projects/blessed-lang/deploys)
+
 BLESSED is a satire with a real interpreter. The playground formats, type-checks,
 and runs BLESSED programs in the browser, translates them to Python and
 TypeScript, and explains its twenty-one commandments with the confidence they
@@ -13,6 +16,11 @@ deserve.
     npm run dev        # playground at http://localhost:5173
     npm test           # vitest
     npm run build      # single-file dist/index.html
+
+The site is the build output and nothing else. `netlify.toml` holds the build
+command and the single-page redirect; Netlify builds `master` on every push
+and gives each pull request a deploy preview. Share links from the
+playground carry the program in the URL, so a bug report can be a link.
 
 ## The language in one screen
 
@@ -89,8 +97,13 @@ surface. Things people have asked about:
   `formatSource`. There is no CLI yet. Someone should write one in BLESSED's
   voice.
 
-Run `npm test` before you open the pull request. 377 tests pass today, and
+Run `npm test` before you open the pull request. 380 tests pass today, and
 the number should only go up.
+
+Open work lives in the [roadmap](https://github.com/AIWhispererGal/blessed-lang/issues/16):
+standard library modules, a CLI, editor grammars, a language server, a third
+translation target. Each issue names the files it touches and what done
+means. `CONTRIBUTING.md` has the rest.
 
 ## Layout
 

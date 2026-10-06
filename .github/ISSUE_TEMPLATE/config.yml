@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The roadmap
+    url: https://github.com/AIWhispererGal/blessed-lang/issues/16
+    about: Start here. Every open piece of work, grouped and linked.
+  - name: The playground
+    url: https://blessed-lang.netlify.app
+    about: Reproduce it in the browser first, then paste the share link.
